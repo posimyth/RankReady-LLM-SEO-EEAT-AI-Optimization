@@ -405,11 +405,12 @@ class RR_Llms_Txt {
 			$lines[]       = '## ' . self::clean_text( $section_title );
 
 			foreach ( $filtered as $post ) {
-				$title   = self::clean_text( get_the_title( $post ) );
-				$url     = get_permalink( $post );
-				$excerpt = self::get_post_description( $post );
+				$title    = self::clean_text( get_the_title( $post ) );
+				$url      = get_permalink( $post );
+				$excerpt  = self::get_post_description( $post );
+				$lastmod  = get_post_modified_time( 'Y-m-d', false, $post );
 
-				$lines[] = '- [' . $title . '](' . $url . '): ' . $excerpt;
+				$lines[] = '- [' . $title . '](' . $url . '): ' . $excerpt . ' (updated: ' . $lastmod . ')';
 			}
 
 			$lines[] = '';

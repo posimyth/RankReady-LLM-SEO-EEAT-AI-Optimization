@@ -320,6 +320,97 @@
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
+	 * BULK FAQ GENERATION
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var faqStart   = document.getElementById( 'rr-faq-bulk-start' );
+	var faqStop    = document.getElementById( 'rr-faq-bulk-stop' );
+	var faqProg    = document.getElementById( 'rr-faq-bulk-progress' );
+	var faqBar     = document.getElementById( 'rr-faq-bulk-bar' );
+	var faqStat    = document.getElementById( 'rr-faq-bulk-status' );
+	var faqRunning = false;
+
+	if ( faqStart ) {
+		faqStart.addEventListener( 'click', function () {
+			var types = [];
+			document.querySelectorAll( '.rr-faq-bulk-type:checked' ).forEach( function ( cb ) {
+				types.push( cb.value );
+			} );
+			if ( ! types.length ) {
+				alert( 'Select at least one post type.' );
+				return;
+			}
+
+			faqRunning           = true;
+			faqStart.disabled    = true;
+			faqStart.textContent = 'Running...';
+			faqStop.style.display  = 'inline-block';
+			faqProg.style.display  = 'block';
+			faqBar.style.width     = '0%';
+			faqStat.textContent    = 'Starting...';
+
+			rrFetch( '/faq-bulk/start', 'POST', { post_types: types } ).then( function ( data ) {
+				if ( data.code ) {
+					faqStat.textContent = 'Error: ' + ( data.message || 'Unknown error' );
+					faqFinish();
+					return;
+				}
+				faqUpdate( data );
+				if ( data.total === 0 ) {
+					faqStat.textContent = 'No published posts found.';
+					faqFinish();
+				} else {
+					faqNext();
+				}
+			} ).catch( function () {
+				faqStat.textContent = 'Failed to start.';
+				faqFinish();
+			} );
+		} );
+
+		faqStop.addEventListener( 'click', function () {
+			faqRunning = false;
+			rrFetch( '/faq-bulk/stop', 'POST' );
+			faqStat.textContent = 'Stopped.';
+			faqFinish();
+		} );
+	}
+
+	function faqUpdate( data ) {
+		var pct = data.total > 0 ? Math.round( ( data.done / data.total ) * 100 ) : 0;
+		faqBar.style.width    = pct + '%';
+		faqStat.textContent   = data.done + ' / ' + data.total + ' posts (' + pct + '%)';
+	}
+
+	function faqNext() {
+		if ( ! faqRunning ) return;
+		rrFetch( '/faq-bulk/process', 'POST' ).then( function ( data ) {
+			if ( data.code ) {
+				faqStat.textContent = 'Error: ' + ( data.message || 'Unknown' );
+				faqFinish();
+				return;
+			}
+			faqUpdate( data );
+			if ( data.running ) {
+				setTimeout( faqNext, 500 );
+			} else {
+				faqStat.textContent = 'Done! ' + data.done + ' FAQs generated.';
+				faqFinish();
+			}
+		} ).catch( function () {
+			faqStat.textContent = 'Request failed — retrying in 5s...';
+			if ( faqRunning ) setTimeout( faqNext, 5000 );
+		} );
+	}
+
+	function faqFinish() {
+		faqRunning            = false;
+		faqStart.disabled     = false;
+		faqStart.textContent  = 'Start Bulk FAQ Generate';
+		faqStop.style.display = 'none';
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
 	 * CRAWLER SELECT ALL
 	 * ═══════════════════════════════════════════════════════════════════════ */
 

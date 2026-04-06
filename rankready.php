@@ -3,7 +3,7 @@
  * Plugin Name:       RankReady – LLM SEO, EEAT & AI Optimization
  * Plugin URI:        https://posimyth.com/rankready/
  * Description:       AI summaries, Article JSON-LD schema with speakable, LLMs.txt generator, Markdown endpoints for LLM crawlers, bulk author changer. Built for LLM SEO, EEAT, and AI Overviews.
- * Version:           2.4.5
+ * Version:           2.5.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            POSIMYTH Innovations
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 
 // ── Constants (guarded to prevent conflicts) ─────────────────────────────────
 if ( ! defined( 'RR_VERSION' ) ) {
-	define( 'RR_VERSION',  '2.4.5' );
+	define( 'RR_VERSION',  '2.5.0' );
 	define( 'RR_FILE',     __FILE__ );
 	define( 'RR_DIR',      plugin_dir_path( __FILE__ ) );
 	define( 'RR_URL',      plugin_dir_url( __FILE__ ) );
@@ -59,11 +59,29 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_OPT_MD_POST_TYPES',     'rr_md_post_types' );
 	define( 'RR_OPT_MD_INCLUDE_META',   'rr_md_include_meta' );
 
+	// Option keys — FAQ.
+	define( 'RR_OPT_DFS_LOGIN',        'rr_dfs_login' );
+	define( 'RR_OPT_DFS_PASSWORD',     'rr_dfs_password' );
+	define( 'RR_OPT_FAQ_POST_TYPES',   'rr_faq_post_types' );
+	define( 'RR_OPT_FAQ_COUNT',        'rr_faq_count' );
+	define( 'RR_OPT_FAQ_BRAND_TERMS',  'rr_faq_brand_terms' );
+	define( 'RR_OPT_FAQ_AUTO_DISPLAY', 'rr_faq_auto_display' );
+	define( 'RR_OPT_FAQ_POSITION',     'rr_faq_position' );
+	define( 'RR_OPT_FAQ_HEADING_TAG',  'rr_faq_heading_tag' );
+	define( 'RR_OPT_FAQ_SHOW_REVIEWED','rr_faq_show_reviewed' );
+
 	// Meta keys.
 	define( 'RR_META_SUMMARY',   '_rr_summary' );
 	define( 'RR_META_HASH',      '_rr_content_hash' );
 	define( 'RR_META_GENERATED', '_rr_last_generated' );
 	define( 'RR_META_DISABLE',   '_rr_disable_summary' );
+
+	// Meta keys — FAQ.
+	define( 'RR_META_FAQ',           '_rr_faq' );
+	define( 'RR_META_FAQ_HASH',      '_rr_faq_hash' );
+	define( 'RR_META_FAQ_GENERATED', '_rr_faq_generated' );
+	define( 'RR_META_FAQ_DISABLE',   '_rr_faq_disable' );
+	define( 'RR_META_FAQ_KEYWORD',   '_rr_faq_keyword' );
 
 	// Cron.
 	define( 'RR_CRON_HOOK', 'rr_async_generate' );
@@ -73,6 +91,12 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_BULK_DONE',    'rr_bulk_done' );
 	define( 'RR_BULK_TOTAL',   'rr_bulk_total' );
 	define( 'RR_BULK_RUNNING', 'rr_bulk_running' );
+
+	// Bulk state — FAQ.
+	define( 'RR_FAQ_QUEUE',   'rr_faq_queue' );
+	define( 'RR_FAQ_DONE',    'rr_faq_done' );
+	define( 'RR_FAQ_TOTAL',   'rr_faq_total' );
+	define( 'RR_FAQ_RUNNING', 'rr_faq_running' );
 
 	// Bulk state — author.
 	define( 'RR_BAC_QUEUE',   'rr_bac_queue' );
@@ -126,6 +150,7 @@ add_action( 'plugins_loaded', function (): void {
 	RR_Rest::init();
 	RR_Llms_Txt::init();
 	RR_Markdown::init();
+	RR_Faq::init();
 
 	if ( did_action( 'elementor/loaded' ) ) {
 		add_action( 'elementor/widgets/register', function ( $widgets_manager ): void {
@@ -165,6 +190,18 @@ register_activation_hook( RR_FILE, function (): void {
 	if ( false === get_option( RR_OPT_ROBOTS_CRAWLERS ) ) {
 		update_option( RR_OPT_ROBOTS_CRAWLERS, array_keys( RR_Admin::get_llm_crawlers() ) );
 	}
+	if ( false === get_option( RR_OPT_FAQ_COUNT ) ) {
+		update_option( RR_OPT_FAQ_COUNT, 5 );
+	}
+	if ( false === get_option( RR_OPT_FAQ_HEADING_TAG ) ) {
+		update_option( RR_OPT_FAQ_HEADING_TAG, 'h3' );
+	}
+	if ( false === get_option( RR_OPT_FAQ_AUTO_DISPLAY ) ) {
+		update_option( RR_OPT_FAQ_AUTO_DISPLAY, 'off' );
+	}
+	if ( false === get_option( RR_OPT_FAQ_SHOW_REVIEWED ) ) {
+		update_option( RR_OPT_FAQ_SHOW_REVIEWED, 'on' );
+	}
 
 	// Register rewrite rules before flushing so they get written.
 	RR_Llms_Txt::add_rewrite_rules();
@@ -182,6 +219,7 @@ register_deactivation_hook( RR_FILE, function (): void {
 	}
 	update_option( RR_BULK_RUNNING, false );
 	update_option( RR_BAC_RUNNING, false );
+	update_option( RR_FAQ_RUNNING, false );
 	delete_transient( RR_LLMS_CACHE_KEY );
 	delete_transient( RR_LLMS_FULL_CACHE_KEY );
 

@@ -61,3 +61,55 @@
 	margin-top: 0;
 	margin-bottom: 0;
 }
+
+/* ── FAQ Wrapper ──────────────────────────────────────────────────────── */
+
+.rr-faq-wrapper {
+	margin: 2em 0;
+	box-sizing: border-box;
+}
+
+.rr-faq-title {
+	margin-top: 0;
+	margin-bottom: 1em;
+}
+
+/* ── FAQ Item ─────────────────────────────────────────────────────────── */
+
+.rr-faq-item {
+	border-bottom: 1px solid #e5e7eb;
+	padding: 0.75em 0;
+}
+
+.rr-faq-item:last-child {
+	border-bottom: none;
+}
+
+.rr-faq-question {
+	font-weight: 600;
+	margin: 0 0 0.4em;
+	line-height: 1.5;
+}
+
+.rr-faq-answer {
+	margin: 0;
+	line-height: 1.7;
+	color: inherit;
+	opacity: 0.9;
+}
+
+/* ── Reviewed Date ────────────────────────────────────────────────────── */
+
+.rr-faq-reviewed {
+	margin-top: 1em;
+	font-size: 0.85em;
+	color: #6b7280;
+	font-style: italic;
+}
+
+/* ── Elementor container reset ────────────────────────────────────────── */
+
+.elementor-widget-container .rr-faq-wrapper {
+	margin-top: 0;
+	margin-bottom: 0;
+}

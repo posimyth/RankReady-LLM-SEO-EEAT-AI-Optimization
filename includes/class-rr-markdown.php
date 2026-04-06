@@ -429,6 +429,15 @@ class RR_Markdown {
 			$lines[] = $content;
 		}
 
+		// ── FAQ section (if available) ───────────────────────────────
+		if ( class_exists( 'RR_Faq' ) ) {
+			$faq_md = RR_Faq::get_faq_markdown( $post->ID );
+			if ( ! empty( $faq_md ) ) {
+				$lines[] = '';
+				$lines[] = $faq_md;
+			}
+		}
+
 		return implode( "\n", $lines );
 	}
 

@@ -13,6 +13,7 @@ class RR_Admin {
 
 	private const SETTINGS_GROUP   = 'rr_settings_group';
 	private const LLMS_GROUP       = 'rr_llms_group';
+	private const FAQ_GROUP        = 'rr_faq_group';
 	private const MENU_SLUG        = 'rankready';
 	private const NONCE_ACTION     = 'rr_test_connection';
 	private const NONCE_FIELD      = 'rr_test_nonce';
@@ -212,6 +213,62 @@ class RR_Admin {
 			'sanitize_callback' => array( self::class, 'sanitize_checkbox_field' ),
 			'default'           => '1',
 		) );
+
+		// ═══ FAQ Tab ═════════════════════════════════════════════════════
+
+		register_setting( self::FAQ_GROUP, RR_OPT_DFS_LOGIN, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_DFS_PASSWORD, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_POST_TYPES, array(
+			'type'              => 'array',
+			'sanitize_callback' => array( self::class, 'sanitize_post_types' ),
+			'default'           => array( 'post' ),
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_COUNT, array(
+			'type'              => 'integer',
+			'sanitize_callback' => 'absint',
+			'default'           => 5,
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_BRAND_TERMS, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_textarea_field',
+			'default'           => '',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_AUTO_DISPLAY, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'off',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_POSITION, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_display_position' ),
+			'default'           => 'after',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_HEADING_TAG, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_heading_tag' ),
+			'default'           => 'h3',
+		) );
+
+		register_setting( self::FAQ_GROUP, RR_OPT_FAQ_SHOW_REVIEWED, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
 	}
 
 	// ── Sanitize callbacks ────────────────────────────────────────────────────
@@ -332,6 +389,7 @@ class RR_Admin {
 		$tabs       = array(
 			'settings' => __( 'Settings', 'rankready' ),
 			'llm'      => __( 'LLM Optimization', 'rankready' ),
+			'faq'      => __( 'FAQ Generator', 'rankready' ),
 			'tools'    => __( 'Tools', 'rankready' ),
 			'info'     => __( 'Info', 'rankready' ),
 		);
@@ -367,6 +425,9 @@ class RR_Admin {
 						break;
 					case 'llm':
 						self::render_tab_llm();
+						break;
+					case 'faq':
+						self::render_tab_faq();
 						break;
 					case 'tools':
 						self::render_tab_tools();
@@ -869,6 +930,150 @@ class RR_Admin {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
+	// TAB: FAQ Generator
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	private static function render_tab_faq(): void {
+		?>
+		<?php settings_errors(); ?>
+
+		<form method="post" action="options.php" novalidate="novalidate">
+			<?php settings_fields( self::FAQ_GROUP ); ?>
+
+			<!-- DataForSEO Configuration -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'DataForSEO API', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'DataForSEO powers question discovery via keyword suggestions and related keywords. Sign up at dataforseo.com.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+					<tr>
+						<th scope="row"><label for="rr_dfs_login"><?php esc_html_e( 'API Login', 'rankready' ); ?></label></th>
+						<td>
+							<input type="text" id="rr_dfs_login" name="<?php echo esc_attr( RR_OPT_DFS_LOGIN ); ?>"
+							       value="<?php echo esc_attr( (string) get_option( RR_OPT_DFS_LOGIN, '' ) ); ?>"
+							       class="regular-text" autocomplete="off" />
+							<p class="description"><?php esc_html_e( 'Your DataForSEO API login email.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="rr_dfs_password"><?php esc_html_e( 'API Password', 'rankready' ); ?></label></th>
+						<td>
+							<input type="password" id="rr_dfs_password" name="<?php echo esc_attr( RR_OPT_DFS_PASSWORD ); ?>"
+							       value="<?php echo esc_attr( (string) get_option( RR_OPT_DFS_PASSWORD, '' ) ); ?>"
+							       class="regular-text" autocomplete="new-password" />
+							<p class="description"><?php esc_html_e( 'Your DataForSEO API password.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<!-- FAQ Settings -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'FAQ Settings', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Configure how FAQs are generated and displayed. Uses DataForSEO for question discovery and OpenAI for answers with brand entity injection.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Post Types', 'rankready' ); ?></th>
+						<td>
+							<?php $faq_types = (array) get_option( RR_OPT_FAQ_POST_TYPES, array( 'post' ) ); ?>
+							<?php foreach ( self::get_allowed_post_types() as $slug => $label ) : ?>
+								<label style="display:block;margin-bottom:4px;">
+									<input type="checkbox" name="<?php echo esc_attr( RR_OPT_FAQ_POST_TYPES ); ?>[]"
+									       value="<?php echo esc_attr( $slug ); ?>"
+									       <?php checked( in_array( $slug, $faq_types, true ) ); ?> />
+									<?php echo esc_html( $label ); ?>
+								</label>
+							<?php endforeach; ?>
+							<p class="description"><?php esc_html_e( 'FAQ will be generated for these post types.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="rr_faq_count"><?php esc_html_e( 'FAQ Count', 'rankready' ); ?></label></th>
+						<td>
+							<input type="number" id="rr_faq_count" name="<?php echo esc_attr( RR_OPT_FAQ_COUNT ); ?>"
+							       value="<?php echo esc_attr( (string) get_option( RR_OPT_FAQ_COUNT, 5 ) ); ?>"
+							       min="3" max="10" step="1" class="small-text" />
+							<p class="description"><?php esc_html_e( 'Number of FAQ items to generate per post (3-10). More FAQs = more API calls.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="rr_faq_brand_terms"><?php esc_html_e( 'Brand Terms', 'rankready' ); ?></label></th>
+						<td>
+							<textarea id="rr_faq_brand_terms" name="<?php echo esc_attr( RR_OPT_FAQ_BRAND_TERMS ); ?>"
+							          rows="3" class="large-text"
+							          placeholder="<?php esc_attr_e( 'e.g. The Plus Addons, Elementor, NexterWP, UiChemy (one per line or comma-separated)', 'rankready' ); ?>"
+							><?php echo esc_textarea( (string) get_option( RR_OPT_FAQ_BRAND_TERMS, '' ) ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Brand/product names to inject as semantic triples in FAQ answers. This builds brand-entity association for LLMs (+642% AI citation lift).', 'rankready' ); ?></p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<!-- FAQ Display -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'FAQ Display', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Control how FAQs appear on the frontend. Can also use the Gutenberg block or Elementor widget instead.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Auto Display', 'rankready' ); ?></th>
+						<td>
+							<?php $faq_auto = (string) get_option( RR_OPT_FAQ_AUTO_DISPLAY, 'off' ); ?>
+							<label>
+								<input type="radio" name="<?php echo esc_attr( RR_OPT_FAQ_AUTO_DISPLAY ); ?>" value="on" <?php checked( $faq_auto, 'on' ); ?> />
+								<?php esc_html_e( 'On — Automatically inject FAQ into post content', 'rankready' ); ?>
+							</label><br/>
+							<label>
+								<input type="radio" name="<?php echo esc_attr( RR_OPT_FAQ_AUTO_DISPLAY ); ?>" value="off" <?php checked( $faq_auto, 'off' ); ?> />
+								<?php esc_html_e( 'Off — Only show via block, widget, or shortcode', 'rankready' ); ?>
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label><?php esc_html_e( 'Position', 'rankready' ); ?></label></th>
+						<td>
+							<?php $faq_pos = (string) get_option( RR_OPT_FAQ_POSITION, 'after' ); ?>
+							<select name="<?php echo esc_attr( RR_OPT_FAQ_POSITION ); ?>">
+								<option value="before" <?php selected( $faq_pos, 'before' ); ?>><?php esc_html_e( 'Before content', 'rankready' ); ?></option>
+								<option value="after"  <?php selected( $faq_pos, 'after' ); ?>><?php esc_html_e( 'After content', 'rankready' ); ?></option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label><?php esc_html_e( 'Heading Tag', 'rankready' ); ?></label></th>
+						<td>
+							<?php $faq_tag = (string) get_option( RR_OPT_FAQ_HEADING_TAG, 'h3' ); ?>
+							<select name="<?php echo esc_attr( RR_OPT_FAQ_HEADING_TAG ); ?>">
+								<?php foreach ( array( 'h2' => 'H2', 'h3' => 'H3', 'h4' => 'H4', 'h5' => 'H5', 'h6' => 'H6' ) as $tag => $label ) : ?>
+									<option value="<?php echo esc_attr( $tag ); ?>" <?php selected( $faq_tag, $tag ); ?>>
+										<?php echo esc_html( $label ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Show "Reviewed" Date', 'rankready' ); ?></th>
+						<td>
+							<?php $show_reviewed = (string) get_option( RR_OPT_FAQ_SHOW_REVIEWED, 'on' ); ?>
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_FAQ_SHOW_REVIEWED ); ?>"
+								       value="on" <?php checked( $show_reviewed, 'on' ); ?> />
+								<?php esc_html_e( 'Show "Last reviewed: [date]" below the FAQ section', 'rankready' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'Signals content freshness to LLMs and users.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<?php submit_button( __( 'Save FAQ Settings', 'rankready' ) ); ?>
+		</form>
+		<?php
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
 	// TAB: Tools
 	// ═══════════════════════════════════════════════════════════════════════════
 
@@ -1011,6 +1216,42 @@ class RR_Admin {
 			<!-- Done -->
 			<div id="rr-bac-done" style="display:none;" class="rr-notice rr-notice--success"></div>
 		</div>
+
+		<!-- Bulk Generate FAQs -->
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Bulk Generate FAQs', 'rankready' ); ?></h2>
+			<p class="rr-card-desc">
+				<?php esc_html_e( 'Generate FAQ Q&A pairs for all existing published posts using DataForSEO + OpenAI. Requires both API keys to be configured.', 'rankready' ); ?>
+			</p>
+
+			<table class="form-table rr-form-table" style="width:auto;">
+				<tr>
+					<th style="padding:10px 20px 10px 0;"><?php esc_html_e( 'Post Types', 'rankready' ); ?></th>
+					<td>
+						<?php foreach ( $post_types as $slug => $label ) : ?>
+							<label style="display:block;margin-bottom:4px;">
+								<input type="checkbox" class="rr-faq-bulk-type" value="<?php echo esc_attr( $slug ); ?>" checked />
+								<?php echo esc_html( $label ); ?>
+							</label>
+						<?php endforeach; ?>
+					</td>
+				</tr>
+				<tr>
+					<th></th>
+					<td>
+						<button id="rr-faq-bulk-start" class="button button-primary"><?php esc_html_e( 'Start Bulk FAQ Generate', 'rankready' ); ?></button>
+						<button id="rr-faq-bulk-stop" class="button button-secondary" style="display:none;margin-left:8px;"><?php esc_html_e( 'Stop', 'rankready' ); ?></button>
+					</td>
+				</tr>
+			</table>
+
+			<div id="rr-faq-bulk-progress" style="display:none;margin-top:16px;">
+				<div class="rr-progress-track">
+					<div id="rr-faq-bulk-bar" class="rr-progress-fill"></div>
+				</div>
+				<p id="rr-faq-bulk-status" class="rr-progress-label"><?php esc_html_e( 'Preparing...', 'rankready' ); ?></p>
+			</div>
+		</div>
 		<?php
 	}
 
@@ -1029,6 +1270,13 @@ class RR_Admin {
 				RR_META_SUMMARY
 			) );
 		}
+
+		$faq_count = 0;
+		global $wpdb;
+		$faq_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
+			RR_META_FAQ
+		) );
 		?>
 		<div class="rr-card">
 			<h2 class="rr-card-title"><?php esc_html_e( 'How It Works', 'rankready' ); ?></h2>
@@ -1075,6 +1323,10 @@ class RR_Admin {
 				<div class="rr-stat">
 					<span class="rr-stat-number"><?php echo ! empty( get_option( RR_OPT_KEY, '' ) ) ? '&#10003;' : '&#10007;'; ?></span>
 					<span class="rr-stat-label"><?php esc_html_e( 'API Key', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $faq_count ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'FAQs Generated', 'rankready' ); ?></span>
 				</div>
 			</div>
 		</div>

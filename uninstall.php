@@ -50,6 +50,21 @@ $options = array(
 	'rr_bac_done',
 	'rr_bac_running',
 	'rr_bac_to_author',
+	// FAQ settings.
+	'rr_dfs_login',
+	'rr_dfs_password',
+	'rr_faq_post_types',
+	'rr_faq_count',
+	'rr_faq_brand_terms',
+	'rr_faq_auto_display',
+	'rr_faq_position',
+	'rr_faq_heading_tag',
+	'rr_faq_show_reviewed',
+	// Bulk FAQ state.
+	'rr_faq_queue',
+	'rr_faq_done',
+	'rr_faq_total',
+	'rr_faq_running',
 	// Version tracking.
 	'rr_installed_version',
 );
@@ -70,6 +85,11 @@ $meta_keys = array(
 	'_rr_content_hash',
 	'_rr_last_generated',
 	'_rr_disable_summary',
+	'_rr_faq',
+	'_rr_faq_hash',
+	'_rr_faq_generated',
+	'_rr_faq_disable',
+	'_rr_faq_keyword',
 );
 
 foreach ( $meta_keys as $key ) {

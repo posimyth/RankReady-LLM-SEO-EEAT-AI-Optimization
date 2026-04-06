@@ -4,11 +4,11 @@ Tags: llm seo, ai summary, schema markup, llms.txt, eeat
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.4.5
+Stable tag: 2.5.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-AI-powered summaries, LLMs.txt generator, Markdown endpoints, Article JSON-LD schema with speakable, bulk author changer. Built for LLM SEO.
+AI summaries, FAQ Generator with brand entity injection, Article JSON-LD schema with speakable, LLMs.txt generator, Markdown endpoints, bulk author changer. Built for LLM SEO, EEAT, and AI Overviews.
 
 == Description ==
 
@@ -23,7 +23,8 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 * **Gutenberg Block** — Full style controls: colors, border, padding, fonts.
 * **Elementor Widget** — Drag-and-drop AI summary widget with style controls.
 * **Bulk Author Changer** — Reassign authors across any post type with preview and progress tracking.
-* **Bulk Regenerate** — Regenerate all summaries in batches with progress bar.
+* **FAQ Generator** — DataForSEO-powered question discovery + OpenAI answers with semantic triple brand injection. FAQPage JSON-LD schema.
+* **Bulk Regenerate** — Regenerate all summaries or FAQs in batches with progress bar.
 
 == Installation ==
 
@@ -34,6 +35,18 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 5. Configure LLMs.txt and Markdown in the LLM Optimization tab.
 
 == Changelog ==
+
+= 2.5.0 =
+* New: FAQ Generator — auto-generate FAQ Q&A pairs using DataForSEO keyword research + OpenAI with brand entity injection
+* New: FAQPage JSON-LD schema — compound with Article, duplicate detection for Rank Math/Yoast/AIOSEO FAQ blocks
+* New: Semantic triple brand injection — builds brand-entity association in FAQ answers (+642% AI citation lift pattern)
+* New: FAQ auto-display with position control (before/after content)
+* New: Bulk FAQ Generation — generate FAQs for all existing posts with progress bar
+* New: FAQ in Markdown endpoints — FAQ section appended to .md output
+* New: FAQ Generator admin tab with DataForSEO credentials, brand terms, FAQ count, heading tag controls
+* New: lastmod dates in llms.txt entries — LLMs prioritize fresh content
+* New: FAQ cleanup on uninstall — all FAQ options and post meta removed
+* Fix: Content freshness signal via dateModified bump when FAQ is generated
 
 = 2.4.5 =
 * Fix: robots.txt header uses plain ASCII instead of Unicode box-drawing characters — prevents garbled symbols in physical file

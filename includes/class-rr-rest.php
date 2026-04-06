@@ -120,6 +120,58 @@ class RR_Rest {
 			'callback'            => array( self::class, 'llms_flush_cache' ),
 			'permission_callback' => array( self::class, 'is_admin_user' ),
 		) );
+
+		// ── FAQ endpoints ─────────────────────────────────────────────────────
+
+		register_rest_route( self::NS, '/faq/generate/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'faq_generate' ),
+			'permission_callback' => array( self::class, 'can_edit_post' ),
+			'args'                => array_merge( self::post_id_arg(), array(
+				'keyword' => array( 'type' => 'string', 'default' => '' ),
+				'count'   => array( 'type' => 'integer', 'default' => 0 ),
+			) ),
+		) );
+
+		register_rest_route( self::NS, '/faq/get/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'faq_get' ),
+			'permission_callback' => array( self::class, 'can_edit_post' ),
+			'args'                => self::post_id_arg(),
+		) );
+
+		register_rest_route( self::NS, '/faq/save/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'faq_save' ),
+			'permission_callback' => array( self::class, 'can_edit_post' ),
+			'args'                => self::post_id_arg(),
+		) );
+
+		register_rest_route( self::NS, '/faq-bulk/start', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'faq_bulk_start' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+			'args'                => array(
+				'post_types' => array(
+					'required' => true, 'type' => 'array',
+					'items'    => array( 'type' => 'string' ),
+					'sanitize_callback' => function ( $v ) { return is_array( $v ) ? array_map( 'sanitize_key', $v ) : array(); },
+				),
+				'skip_existing' => array( 'type' => 'boolean', 'default' => true ),
+			),
+		) );
+
+		register_rest_route( self::NS, '/faq-bulk/process', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'faq_bulk_process' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		register_rest_route( self::NS, '/faq-bulk/stop', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'faq_bulk_stop' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
 	}
 
 	// ── Permission callbacks ──────────────────────────────────────────────────
@@ -480,6 +532,172 @@ class RR_Rest {
 		delete_transient( RR_LLMS_CACHE_KEY );
 		delete_transient( RR_LLMS_FULL_CACHE_KEY );
 		return new WP_REST_Response( array( 'success' => true, 'message' => __( 'Cache cleared.', 'rankready' ) ), 200 );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// FAQ ENDPOINTS
+	// ══════════════════════════════════════════════════════════════════════════
+
+	public static function faq_generate( $request ) {
+		$post_id = (int) $request->get_param( 'id' );
+		$keyword = sanitize_text_field( $request->get_param( 'keyword' ) );
+		$count   = (int) $request->get_param( 'count' );
+
+		$result = RR_Faq::generate_faq( $post_id, $keyword, $count );
+
+		if ( is_wp_error( $result ) ) {
+			return new WP_REST_Response( array(
+				'success' => false,
+				'message' => $result->get_error_message(),
+			), 400 );
+		}
+
+		return new WP_REST_Response( array(
+			'success' => true,
+			'faq'     => $result,
+			'count'   => count( $result ),
+		), 200 );
+	}
+
+	public static function faq_get( $request ) {
+		$post_id  = (int) $request->get_param( 'id' );
+		$faq_data = RR_Faq::get_faq_data( $post_id );
+
+		return new WP_REST_Response( array(
+			'success'   => true,
+			'faq'       => $faq_data,
+			'keyword'   => (string) get_post_meta( $post_id, RR_META_FAQ_KEYWORD, true ),
+			'generated' => (int) get_post_meta( $post_id, RR_META_FAQ_GENERATED, true ),
+			'disabled'  => (bool) get_post_meta( $post_id, RR_META_FAQ_DISABLE, true ),
+		), 200 );
+	}
+
+	public static function faq_save( $request ) {
+		$post_id  = (int) $request->get_param( 'id' );
+		$faq_data = $request->get_json_params();
+
+		if ( ! isset( $faq_data['faq'] ) || ! is_array( $faq_data['faq'] ) ) {
+			return new WP_Error( 'rr_invalid_faq', __( 'Invalid FAQ data.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		$clean = array();
+		foreach ( $faq_data['faq'] as $item ) {
+			if ( ! empty( $item['question'] ) && ! empty( $item['answer'] ) ) {
+				$clean[] = array(
+					'question' => sanitize_text_field( $item['question'] ),
+					'answer'   => wp_kses_post( $item['answer'] ),
+				);
+			}
+		}
+
+		update_post_meta( $post_id, RR_META_FAQ, wp_json_encode( $clean ) );
+		update_post_meta( $post_id, RR_META_FAQ_GENERATED, time() );
+
+		return new WP_REST_Response( array( 'success' => true, 'count' => count( $clean ) ), 200 );
+	}
+
+	// ── FAQ Bulk ──────────────────────────────────────────────────────────────
+
+	public static function faq_bulk_start( $request ) {
+		if ( get_option( RR_FAQ_RUNNING ) ) {
+			return new WP_Error( 'rr_faq_running', __( 'FAQ generation already running.', 'rankready' ), array( 'status' => 409 ) );
+		}
+
+		$types         = $request->get_param( 'post_types' );
+		$skip_existing = (bool) $request->get_param( 'skip_existing' );
+		$allowed       = array_keys( RR_Admin::get_allowed_post_types() );
+		$types         = array_values( array_intersect( $types, $allowed ) );
+
+		if ( empty( $types ) ) {
+			return new WP_Error( 'rr_no_types', __( 'Select at least one post type.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		$args = array(
+			'post_type'      => $types,
+			'post_status'    => 'publish',
+			'posts_per_page' => 10000,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+		);
+
+		// Skip posts that already have FAQ.
+		if ( $skip_existing ) {
+			$args['meta_query'] = array(
+				'relation' => 'OR',
+				array( 'key' => RR_META_FAQ, 'compare' => 'NOT EXISTS' ),
+				array( 'key' => RR_META_FAQ, 'value' => '', 'compare' => '=' ),
+			);
+		}
+
+		$ids = get_posts( $args );
+
+		if ( empty( $ids ) ) {
+			return new WP_REST_Response( array(
+				'running' => false,
+				'done'    => 0,
+				'total'   => 0,
+			), 200 );
+		}
+
+		update_option( RR_FAQ_QUEUE, $ids );
+		update_option( RR_FAQ_TOTAL, count( $ids ) );
+		update_option( RR_FAQ_DONE, 0 );
+		update_option( RR_FAQ_RUNNING, true );
+
+		return new WP_REST_Response( array(
+			'running' => true,
+			'done'    => 0,
+			'total'   => count( $ids ),
+		), 200 );
+	}
+
+	public static function faq_bulk_process() {
+		if ( ! get_option( RR_FAQ_RUNNING ) ) {
+			return new WP_REST_Response( array(
+				'running' => false,
+				'done'    => (int) get_option( RR_FAQ_DONE, 0 ),
+				'total'   => (int) get_option( RR_FAQ_TOTAL, 0 ),
+			), 200 );
+		}
+
+		$queue = (array) get_option( RR_FAQ_QUEUE, array() );
+		$done  = (int) get_option( RR_FAQ_DONE, 0 );
+		$total = (int) get_option( RR_FAQ_TOTAL, 0 );
+
+		// Process 1 post per batch (API rate limits).
+		if ( ! empty( $queue ) ) {
+			$post_id = array_shift( $queue );
+			update_option( RR_FAQ_QUEUE, $queue );
+
+			$result = RR_Faq::generate_faq( (int) $post_id );
+
+			$done++;
+			update_option( RR_FAQ_DONE, $done );
+		}
+
+		$still_running = ! empty( $queue );
+		if ( ! $still_running ) {
+			update_option( RR_FAQ_RUNNING, false );
+		}
+
+		return new WP_REST_Response( array(
+			'running' => $still_running,
+			'done'    => $done,
+			'total'   => $total,
+		), 200 );
+	}
+
+	public static function faq_bulk_stop() {
+		update_option( RR_FAQ_RUNNING, false );
+		update_option( RR_FAQ_QUEUE, array() );
+
+		return new WP_REST_Response( array(
+			'running' => false,
+			'done'    => (int) get_option( RR_FAQ_DONE, 0 ),
+			'total'   => (int) get_option( RR_FAQ_TOTAL, 0 ),
+		), 200 );
 	}
 
 	// ── Common arg schemas ────────────────────────────────────────────────────
