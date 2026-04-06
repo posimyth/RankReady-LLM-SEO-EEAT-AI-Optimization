@@ -1,0 +1,464 @@
+<?php
+/**
+ * Markdown endpoint — serves every post as clean .md at its URL.
+ *
+ * Per llmstxt.org spec: "pages on websites that have information that might be
+ * useful for LLMs to read provide a clean markdown version of those pages at
+ * the same URL as the original page, but with .md appended."
+ *
+ * URL format: /post-slug.md (appends .md to the post URL path)
+ * Examples:
+ *   /hello-world/   -> /hello-world.md
+ *   /docs/refunds/  -> /docs/refunds.md
+ *   /2024/01/post/  -> /2024/01/post.md
+ *
+ * Also supports:
+ * - Accept: text/markdown content negotiation (like Next.js)
+ * - <link rel="alternate" type="text/markdown"> discovery (per Joost de Valk)
+ * - Link HTTP header for crawler discovery
+ *
+ * YAML frontmatter includes title, date, author, excerpt, tags, categories.
+ * Aggressively strips Elementor, Divi, WPBakery, Beaver Builder markup.
+ *
+ * @package RankReady
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+class RR_Markdown {
+
+	public static function init(): void {
+		add_action( 'init',              array( self::class, 'add_rewrite_rules' ) );
+		add_action( 'template_redirect', array( self::class, 'handle_request' ) );
+
+		// Content negotiation: serve markdown when Accept: text/markdown is sent.
+		add_action( 'template_redirect', array( self::class, 'handle_accept_header' ), 5 );
+
+		// Add Link header on HTML pages pointing to .md version.
+		add_action( 'wp_head',           array( self::class, 'add_md_link_tag' ) );
+		add_action( 'send_headers',      array( self::class, 'add_md_link_header' ) );
+
+		// Add visible "View as Markdown" link after content (like EDD).
+		add_filter( 'the_content',       array( self::class, 'append_md_link' ), 100 );
+
+		// Prevent WordPress from adding trailing slash to .md URLs.
+		add_filter( 'redirect_canonical', array( self::class, 'prevent_md_trailing_slash' ), 10, 2 );
+
+		// Flush rewrite rules when the setting changes.
+		add_action( 'update_option_' . RR_OPT_MD_ENABLE, array( self::class, 'flush_rules' ) );
+
+		// Register query vars via named method (not anonymous closure).
+		add_filter( 'query_vars', array( self::class, 'register_query_vars' ) );
+	}
+
+	/**
+	 * Prevent WordPress from adding trailing slash to .md URLs.
+	 */
+	public static function prevent_md_trailing_slash( $redirect_url, $requested_url ) {
+		if ( preg_match( '/\.md\/?$/i', $requested_url ) ) {
+			return false;
+		}
+		return $redirect_url;
+	}
+
+	// ── Query vars (named method so it can be removed) ───────────────────────
+
+	public static function register_query_vars( array $vars ): array {
+		$vars[] = 'rr_md_path';
+		return $vars;
+	}
+
+	// ── Rewrite rules ────────────────────────────────────────────────────────
+
+	public static function add_rewrite_rules(): void {
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) ) {
+			return;
+		}
+
+		// IMPORTANT: Exclude wp-admin, wp-content, wp-includes, wp-json paths
+		// to prevent hijacking real .md files or admin/API routes.
+		// Only match front-end content paths.
+		add_rewrite_rule(
+			'^(?!wp-admin|wp-content|wp-includes|wp-json)(.+)\.md$',
+			'index.php?rr_md_path=$matches[1]',
+			'top'
+		);
+	}
+
+	public static function flush_rules(): void {
+		flush_rewrite_rules( false );
+	}
+
+	// ── Handle .md URL request ───────────────────────────────────────────────
+
+	public static function handle_request(): void {
+		$md_path = get_query_var( 'rr_md_path', '' );
+
+		if ( empty( $md_path ) ) {
+			return;
+		}
+
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) ) {
+			status_header( 404 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo '# 404 Not Found';
+			exit;
+		}
+
+		// Resolve the path to a post.
+		$post = self::resolve_post_from_path( $md_path );
+
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			status_header( 404 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo '# 404 Not Found';
+			exit;
+		}
+
+		// Check post type is enabled.
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+			status_header( 404 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo '# 404 Not Found';
+			exit;
+		}
+
+		$markdown = self::post_to_markdown( $post );
+		self::serve_markdown( $markdown, get_permalink( $post ) );
+	}
+
+	// ── Accept header content negotiation ────────────────────────────────────
+	// Like Next.js: when a request sends Accept: text/markdown on a normal
+	// post URL, serve the markdown version directly.
+
+	public static function handle_accept_header(): void {
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) ) {
+			return;
+		}
+
+		// Only on singular post/page views.
+		if ( ! is_singular() ) {
+			return;
+		}
+
+		// Check Accept header for text/markdown.
+		$accept = isset( $_SERVER['HTTP_ACCEPT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT'] ) ) : '';
+		if ( false === stripos( $accept, 'text/markdown' ) ) {
+			return;
+		}
+
+		$post = get_queried_object();
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			return;
+		}
+
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+			return;
+		}
+
+		$markdown = self::post_to_markdown( $post );
+		self::serve_markdown( $markdown, get_permalink( $post ) );
+	}
+
+	// ── Link tag + header to .md version ─────────────────────────────────────
+	// Helps crawlers discover the markdown version from the HTML page.
+
+	public static function add_md_link_tag(): void {
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) || ! is_singular() ) {
+			return;
+		}
+
+		$post = get_queried_object();
+		if ( ! $post instanceof WP_Post ) {
+			return;
+		}
+
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+			return;
+		}
+
+		$md_url = self::get_md_url( $post );
+		echo '<link rel="alternate" type="text/markdown" href="' . esc_url( $md_url ) . '" />' . "\n";
+	}
+
+	public static function add_md_link_header(): void {
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) || ! is_singular() ) {
+			return;
+		}
+
+		$post = get_queried_object();
+		if ( ! $post instanceof WP_Post ) {
+			return;
+		}
+
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+			return;
+		}
+
+		$md_url = self::get_md_url( $post );
+		header( 'Link: <' . esc_url( $md_url ) . '>; rel="alternate"; type="text/markdown"', false );
+	}
+
+	// ── Visible "View as Markdown" link after content ───────────────────────
+	// Like EDD's "LLM? View in Markdown" — helps humans and crawlers discover .md.
+
+	public static function append_md_link( string $content ): string {
+		if ( 'on' !== get_option( RR_OPT_MD_ENABLE, 'off' ) ) {
+			return $content;
+		}
+
+		if ( ! is_singular() || ! is_main_query() || ! in_the_loop() ) {
+			return $content;
+		}
+
+		$post = get_post();
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			return $content;
+		}
+
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+			return $content;
+		}
+
+		// Allow disabling via filter.
+		if ( ! apply_filters( 'rankready_show_md_link', true, $post ) ) {
+			return $content;
+		}
+
+		$md_url = self::get_md_url( $post );
+
+		$link_html = '<p class="rr-md-link" style="margin-top:2em;padding-top:1em;border-top:1px solid #e5e7eb;font-size:0.85em;color:#6b7280;">'
+			. '<span style="margin-right:0.3em;">&#129302;</span> '
+			. '<a href="' . esc_url( $md_url ) . '" style="color:#6b7280;text-decoration:underline;" rel="alternate">'
+			. esc_html__( 'View as Markdown', 'rankready' )
+			. '</a>'
+			. '</p>';
+
+		return $content . $link_html;
+	}
+
+	// ── Serve markdown response ──────────────────────────────────────────────
+
+	private static function serve_markdown( string $markdown, string $canonical_url ): void {
+		header( 'X-Content-Type-Options: nosniff' );
+		header( 'Content-Type: text/markdown; charset=utf-8' );
+		header( 'Cache-Control: public, max-age=3600' );
+		header( 'Link: <' . esc_url( $canonical_url ) . '>; rel="canonical"', false );
+		header( 'Vary: Accept' );
+
+		echo $markdown; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		exit;
+	}
+
+	// ── Post resolver ────────────────────────────────────────────────────────
+
+	/**
+	 * Resolve a URL path (without .md) back to a WP_Post.
+	 *
+	 * Handles:
+	 * - Pages: /about -> page "about"
+	 * - Hierarchical pages: /docs/refunds -> page "refunds" under "docs"
+	 * - Posts with /%postname%/: /hello-world -> post "hello-world"
+	 * - Posts with date permalinks: /2024/01/15/hello-world -> post "hello-world"
+	 * - Custom post types: /product/widget -> CPT "widget"
+	 *
+	 * @param string $path The URL path captured before .md (no leading/trailing slash).
+	 * @return WP_Post|null
+	 */
+	private static function resolve_post_from_path( string $path ): ?WP_Post {
+		// Clean path.
+		$path = trim( $path, '/' );
+
+		if ( empty( $path ) ) {
+			return null;
+		}
+
+		// Strategy 1: Use url_to_postid() — works for most permalink structures.
+		$url     = home_url( '/' . $path . '/' );
+		$post_id = url_to_postid( $url );
+
+		if ( $post_id > 0 ) {
+			return get_post( $post_id );
+		}
+
+		// Also try without trailing slash.
+		$url     = home_url( '/' . $path );
+		$post_id = url_to_postid( $url );
+
+		if ( $post_id > 0 ) {
+			return get_post( $post_id );
+		}
+
+		// Strategy 2: Try get_page_by_path() for pages and hierarchical types.
+		$enabled_types = (array) get_option( RR_OPT_MD_POST_TYPES, array( 'post', 'page' ) );
+		$post          = get_page_by_path( $path, OBJECT, $enabled_types );
+
+		if ( $post instanceof WP_Post ) {
+			return $post;
+		}
+
+		// Strategy 3: For CPTs with rewrite slugs, strip the CPT prefix.
+		$segments = explode( '/', $path );
+		if ( count( $segments ) >= 2 ) {
+			$possible_cpt  = $segments[0];
+			$possible_slug = implode( '/', array_slice( $segments, 1 ) );
+
+			foreach ( $enabled_types as $pt ) {
+				$type_obj = get_post_type_object( $pt );
+				if ( ! $type_obj ) {
+					continue;
+				}
+
+				$rewrite_slug = $pt;
+				if ( ! empty( $type_obj->rewrite['slug'] ) ) {
+					$rewrite_slug = $type_obj->rewrite['slug'];
+				}
+
+				if ( $possible_cpt === $rewrite_slug ) {
+					$found = get_page_by_path( $possible_slug, OBJECT, $pt );
+					if ( $found instanceof WP_Post ) {
+						return $found;
+					}
+				}
+			}
+		}
+
+		// Strategy 4: Last resort — slug lookup.
+		$slug  = basename( $path );
+		$posts = get_posts( array(
+			'name'                   => $slug,
+			'post_type'              => $enabled_types,
+			'post_status'            => 'publish',
+			'posts_per_page'         => 1,
+			'no_found_rows'          => true,
+			'update_post_term_cache' => false,
+			'update_post_meta_cache' => false,
+		) );
+
+		if ( ! empty( $posts ) ) {
+			return $posts[0];
+		}
+
+		return null;
+	}
+
+	// ── Markdown generator ───────────────────────────────────────────────────
+
+	public static function post_to_markdown( WP_Post $post ): string {
+		$lines = array();
+
+		// ── YAML frontmatter ─────────────────────────────────────────────
+		$include_meta = (bool) get_option( RR_OPT_MD_INCLUDE_META, '1' );
+
+		if ( $include_meta ) {
+			$lines[] = '---';
+			$lines[] = 'title: "' . self::yaml_escape( get_the_title( $post ) ) . '"';
+			$lines[] = 'url: ' . get_permalink( $post );
+			$lines[] = 'date: ' . get_post_time( 'Y-m-d', false, $post );
+			$lines[] = 'modified: ' . get_post_modified_time( 'Y-m-d', false, $post );
+			$lines[] = 'author: "' . self::yaml_escape( get_the_author_meta( 'display_name', $post->post_author ) ) . '"';
+
+			// Excerpt.
+			$excerpt = ! empty( $post->post_excerpt )
+				? $post->post_excerpt
+				: wp_trim_words( wp_strip_all_tags( $post->post_content ), 30, '...' );
+			$lines[] = 'description: "' . self::yaml_escape( $excerpt ) . '"';
+
+			// Categories.
+			$categories = wp_get_post_categories( $post->ID, array( 'fields' => 'names' ) );
+			if ( ! empty( $categories ) && ! is_wp_error( $categories ) ) {
+				$lines[] = 'categories:';
+				foreach ( $categories as $cat ) {
+					$lines[] = '  - "' . self::yaml_escape( $cat ) . '"';
+				}
+			}
+
+			// Tags.
+			$tags = wp_get_post_tags( $post->ID, array( 'fields' => 'names' ) );
+			if ( ! empty( $tags ) && ! is_wp_error( $tags ) ) {
+				$lines[] = 'tags:';
+				foreach ( $tags as $tag ) {
+					$lines[] = '  - "' . self::yaml_escape( $tag ) . '"';
+				}
+			}
+
+			// Featured image.
+			if ( has_post_thumbnail( $post->ID ) ) {
+				$thumb_url = get_the_post_thumbnail_url( $post->ID, 'large' );
+				if ( $thumb_url ) {
+					$lines[] = 'image: ' . $thumb_url;
+				}
+			}
+
+			// Word count.
+			$plain    = wp_strip_all_tags( $post->post_content );
+			$wc       = preg_match_all( '/\S+/', $plain ); // locale-safe word count.
+			$lines[]  = 'word_count: ' . ( false !== $wc ? $wc : 0 );
+
+			$lines[] = '---';
+			$lines[] = '';
+		}
+
+		// ── Title ────────────────────────────────────────────────────────
+		$lines[] = '# ' . self::clean_text( get_the_title( $post ) );
+		$lines[] = '';
+
+		// ── AI Summary (if available) ────────────────────────────────────
+		$summary_raw = (string) get_post_meta( $post->ID, RR_META_SUMMARY, true );
+		if ( ! empty( $summary_raw ) ) {
+			$summary = RR_Generator::decode_summary( $summary_raw );
+			if ( 'bullets' === $summary['type'] && ! empty( $summary['data'] ) ) {
+				$lines[] = '## Key Takeaways';
+				$lines[] = '';
+				foreach ( $summary['data'] as $bullet ) {
+					$lines[] = '- ' . self::clean_text( $bullet );
+				}
+				$lines[] = '';
+			}
+		}
+
+		// ── Content ──────────────────────────────────────────────────────
+		$content = RR_Llms_Txt::post_to_clean_markdown( $post );
+
+		if ( ! empty( $content ) ) {
+			$lines[] = $content;
+		}
+
+		return implode( "\n", $lines );
+	}
+
+	// ── Get .md URL for a post ───────────────────────────────────────────────
+
+	/**
+	 * Get the .md URL for a given post.
+	 *
+	 * @param WP_Post|int $post Post object or ID.
+	 * @return string The .md URL (e.g., https://example.com/hello-world.md).
+	 */
+	public static function get_md_url( $post ): string {
+		$permalink = get_permalink( $post );
+		$permalink = untrailingslashit( $permalink );
+
+		return $permalink . '.md';
+	}
+
+	// ── Helpers ──────────────────────────────────────────────────────────────
+
+	private static function clean_text( string $text ): string {
+		$text = wp_strip_all_tags( $text );
+		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
+		$text = preg_replace( '/\s+/', ' ', $text );
+		return trim( $text );
+	}
+
+	private static function yaml_escape( string $text ): string {
+		$text = self::clean_text( $text );
+		$text = str_replace( '"', '\\"', $text );
+		return $text;
+	}
+}

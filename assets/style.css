@@ -1,0 +1,63 @@
+/**
+ * RankReady — Frontend styles.
+ * CSS custom properties used for block-level style overrides.
+ */
+
+/* ── Summary Wrapper ───────────────────────────────────────────────────────── */
+
+.rr-summary {
+	border-left: 3px solid currentColor;
+	padding: 1em 1.25em;
+	margin: 1.5em 0;
+	box-sizing: border-box;
+}
+
+/* ── Label ─────────────────────────────────────────────────────────────────── */
+
+.rr-label {
+	margin-top: 0;
+	margin-bottom: 0.5em;
+}
+
+/* ── Bullet list ───────────────────────────────────────────────────────────── */
+
+.rr-bullets {
+	margin: 0;
+	padding-left: 1.4em;
+	list-style-type: disc;
+}
+
+.rr-bullet {
+	margin-bottom: 0.45em;
+	line-height: 1.65;
+}
+
+.rr-bullet:last-child {
+	margin-bottom: 0;
+}
+
+/* Marker color via CSS custom property (set by block inline styles) */
+.rr-bullet::marker {
+	color: var(--rr-marker-color, currentColor);
+}
+
+/* ── Legacy plain-text fallback ────────────────────────────────────────────── */
+
+.rr-text {
+	margin: 0;
+	line-height: 1.7;
+}
+
+/* ── Editor dashed outline ─────────────────────────────────────────────────── */
+
+.rr-editor-preview {
+	outline: 1px dashed rgba(0, 115, 170, 0.35);
+	outline-offset: 2px;
+}
+
+/* ── Elementor container reset ─────────────────────────────────────────────── */
+
+.elementor-widget-container .rr-summary {
+	margin-top: 0;
+	margin-bottom: 0;
+}

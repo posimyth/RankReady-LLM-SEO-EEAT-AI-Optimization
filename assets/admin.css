@@ -1,0 +1,330 @@
+/**
+ * RankReady — Admin Styles
+ * Clean, professional WordPress-native look.
+ */
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+
+.rr-wrap {
+	max-width: 900px;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+
+.rr-header {
+	margin-bottom: 0;
+	padding: 20px 0 10px;
+}
+
+.rr-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 23px;
+	font-weight: 400;
+	margin: 0;
+	color: #1d2327;
+}
+
+.rr-title-icon {
+	font-size: 24px;
+	color: #2271b1;
+}
+
+.rr-version {
+	font-size: 12px;
+	color: #a7aaad;
+	font-weight: 400;
+	background: #f0f0f1;
+	padding: 2px 8px;
+	border-radius: 3px;
+	margin-left: 4px;
+}
+
+.rr-subtitle {
+	margin: 4px 0 0;
+	color: #646970;
+	font-size: 13px;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────────────────── */
+
+.rr-tabs {
+	margin-top: 16px;
+	border-bottom: 1px solid #c3c4c7;
+}
+
+.rr-tabs .nav-tab {
+	font-size: 13px;
+	padding: 8px 16px;
+}
+
+.rr-tabs .nav-tab-active {
+	background: #fff;
+	border-bottom-color: #fff;
+}
+
+.rr-tab-content {
+	padding-top: 20px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+
+.rr-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 20px 24px;
+	margin-bottom: 20px;
+}
+
+.rr-card--subtle {
+	background: #f9f9f9;
+	border-color: #e0e0e0;
+}
+
+.rr-card-title {
+	font-size: 15px;
+	font-weight: 600;
+	margin: 0 0 4px;
+	color: #1d2327;
+	padding: 0;
+}
+
+.rr-card-desc {
+	color: #646970;
+	font-size: 13px;
+	margin: 0 0 16px;
+}
+
+/* ── Form table overrides ──────────────────────────────────────────────────── */
+
+.rr-form-table th {
+	padding: 12px 10px 12px 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.rr-form-table td {
+	padding: 12px 0;
+}
+
+.rr-form-table .description {
+	font-size: 12px;
+	color: #646970;
+	margin-top: 4px;
+}
+
+/* ── Toggle controls ───────────────────────────────────────────────────────── */
+
+.rr-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.rr-toggle-label {
+	font-size: 13px;
+}
+
+/* ── Conditional fields ────────────────────────────────────────────────────── */
+
+.rr-conditional-fields {
+	border-top: 1px solid #f0f0f1;
+	margin-top: 8px;
+	padding-top: 8px;
+}
+
+/* ── Checkboxes inline ─────────────────────────────────────────────────────── */
+
+.rr-checkboxes-inline {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 20px;
+}
+
+.rr-checkboxes-inline label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+/* ── Date range ────────────────────────────────────────────────────────────── */
+
+.rr-date-range {
+	display: flex;
+	gap: 20px;
+	flex-wrap: wrap;
+}
+
+.rr-date-range > div {
+	min-width: 180px;
+}
+
+.rr-date-range label {
+	display: block;
+	font-size: 12px;
+	color: #646970;
+	margin-bottom: 4px;
+}
+
+.rr-date-range input[type="date"] {
+	width: 100%;
+}
+
+/* ── Tool actions ──────────────────────────────────────────────────────────── */
+
+.rr-tool-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+
+.rr-progress-track {
+	background: #f0f0f1;
+	border-radius: 4px;
+	height: 18px;
+	overflow: hidden;
+	max-width: 500px;
+}
+
+.rr-progress-fill {
+	background: #2271b1;
+	height: 100%;
+	width: 0%;
+	transition: width 0.25s ease;
+	border-radius: 4px 0 0 4px;
+}
+
+.rr-progress-label {
+	color: #50575e;
+	font-size: 13px;
+	margin: 8px 0 0;
+}
+
+/* ── Notices ───────────────────────────────────────────────────────────────── */
+
+.rr-notice {
+	padding: 10px 14px;
+	border-radius: 4px;
+	font-size: 13px;
+	margin-top: 14px;
+	max-width: 560px;
+}
+
+.rr-notice--info {
+	background: #eef6fb;
+	border-left: 4px solid #2271b1;
+	color: #1d2327;
+}
+
+.rr-notice--warn {
+	background: #fcf9e8;
+	border-left: 4px solid #dba617;
+	color: #1d2327;
+}
+
+.rr-notice--success {
+	background: #edfaef;
+	border-left: 4px solid #00a32a;
+	color: #1d2327;
+}
+
+.rr-notice--error {
+	background: #fcf0f1;
+	border-left: 4px solid #d63638;
+	color: #1d2327;
+}
+
+/* ── Info grid ─────────────────────────────────────────────────────────────── */
+
+.rr-info-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	gap: 16px;
+}
+
+.rr-info-item {
+	background: #f9f9f9;
+	border: 1px solid #e8e8e8;
+	border-radius: 4px;
+	padding: 16px;
+}
+
+.rr-info-icon {
+	font-size: 20px;
+	color: #2271b1;
+	margin-bottom: 8px;
+}
+
+.rr-info-item h3 {
+	font-size: 14px;
+	margin: 8px 0 6px;
+	color: #1d2327;
+}
+
+.rr-info-item p {
+	font-size: 12px;
+	color: #646970;
+	margin: 0;
+	line-height: 1.5;
+}
+
+/* ── Stats row ─────────────────────────────────────────────────────────────── */
+
+.rr-stats-row {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 16px;
+}
+
+.rr-stat {
+	text-align: center;
+	padding: 16px 12px;
+	background: #f9f9f9;
+	border: 1px solid #e8e8e8;
+	border-radius: 4px;
+}
+
+.rr-stat-number {
+	display: block;
+	font-size: 28px;
+	font-weight: 600;
+	color: #1d2327;
+	line-height: 1.2;
+}
+
+.rr-stat-label {
+	display: block;
+	font-size: 12px;
+	color: #646970;
+	margin-top: 4px;
+}
+
+/* ── Select width fix ──────────────────────────────────────────────────────── */
+
+select.regular-text {
+	min-width: 300px;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 782px) {
+	.rr-info-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.rr-stats-row {
+		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.rr-date-range {
+		flex-direction: column;
+	}
+}
