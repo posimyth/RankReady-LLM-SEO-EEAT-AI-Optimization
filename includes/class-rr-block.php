@@ -15,6 +15,7 @@ class RR_Block {
 		add_action( 'enqueue_block_editor_assets', array( self::class, 'enqueue_editor_assets' ) );
 		add_action( 'wp_enqueue_scripts',          array( self::class, 'enqueue_frontend_assets' ) );
 		add_action( 'wp_head',                     array( self::class, 'maybe_inject_schema' ), 1 );
+		add_action( 'wp_head',                     array( self::class, 'maybe_inject_howto_schema' ), 25 );
 		add_filter( 'the_content',                 array( self::class, 'maybe_auto_display' ), 99 );
 
 		// Merge AI-friendly schema into ALL major SEO plugins.
@@ -953,6 +954,240 @@ class RR_Block {
 		// Allow hex, rgb, rgba, hsl, hsla, CSS named colors
 		if ( preg_match( '/^(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\)|[a-zA-Z]+)$/', $color ) ) {
 			return $color;
+		}
+		return '';
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// HOWTO SCHEMA — AUTO-DETECTION FROM EXISTING CONTENT
+	//
+	// Scans post content for step-by-step patterns:
+	// 1. Ordered lists (<ol><li>)
+	// 2. Headings with "Step N" patterns (Step 1:, Step 2:)
+	// 3. Numbered headings (1. Do this, 2. Do that)
+	//
+	// Extracts steps from existing content — never adds new content to the post.
+	// Skips if Rank Math HowTo block exists (they output their own schema).
+	// ══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Inject HowTo JSON-LD schema if post content contains step-by-step patterns.
+	 */
+	public static function maybe_inject_howto_schema(): void {
+		if ( ! is_singular() ) return;
+		if ( ! apply_filters( 'rankready_inject_howto_schema', true ) ) return;
+
+		$post = get_queried_object();
+		if ( ! $post instanceof \WP_Post || 'publish' !== $post->post_status ) return;
+		if ( ! is_post_type_viewable( $post->post_type ) ) return;
+
+		// Skip if Rank Math HowTo block exists — they handle their own schema.
+		if ( false !== strpos( $post->post_content, 'rank-math/howto-block' ) ) return;
+		if ( false !== strpos( $post->post_content, 'yoast/how-to-block' ) ) return;
+		if ( false !== strpos( $post->post_content, 'yoast-seo/how-to' ) ) return;
+
+		// Detect if this is a "how to" post by title or content patterns.
+		$title = strtolower( get_the_title( $post->ID ) );
+		$has_howto_title = (
+			false !== strpos( $title, 'how to' ) ||
+			false !== strpos( $title, 'how-to' ) ||
+			false !== strpos( $title, 'step by step' ) ||
+			false !== strpos( $title, 'step-by-step' ) ||
+			false !== strpos( $title, 'tutorial' ) ||
+			false !== strpos( $title, 'guide to' )
+		);
+
+		// Extract steps from content.
+		$steps = self::extract_howto_steps( $post->post_content );
+
+		// Need at least 2 steps AND a how-to title to generate schema.
+		if ( count( $steps ) < 2 || ! $has_howto_title ) return;
+
+		// Build HowTo JSON-LD.
+		$schema_steps = array();
+		$position     = 1;
+		foreach ( $steps as $step ) {
+			$step_schema = array(
+				'@type'    => 'HowToStep',
+				'position' => $position,
+				'name'     => $step['name'],
+			);
+			if ( ! empty( $step['text'] ) ) {
+				$step_schema['text'] = $step['text'];
+			}
+			if ( ! empty( $step['image'] ) ) {
+				$step_schema['image'] = $step['image'];
+			}
+			$schema_steps[] = $step_schema;
+			$position++;
+		}
+
+		$schema = array(
+			'@context' => 'https://schema.org',
+			'@type'    => 'HowTo',
+			'name'     => get_the_title( $post->ID ),
+			'step'     => $schema_steps,
+		);
+
+		// Add description from RankReady summary or post excerpt.
+		$raw_summary = (string) get_post_meta( $post->ID, RR_META_SUMMARY, true );
+		if ( ! empty( $raw_summary ) ) {
+			$summary = RR_Generator::decode_summary( $raw_summary );
+			if ( 'bullets' === $summary['type'] && is_array( $summary['data'] ) ) {
+				$schema['description'] = implode( '. ', $summary['data'] ) . '.';
+			} elseif ( 'text' === $summary['type'] ) {
+				$schema['description'] = (string) $summary['data'];
+			}
+		} elseif ( ! empty( $post->post_excerpt ) ) {
+			$schema['description'] = wp_strip_all_tags( $post->post_excerpt );
+		}
+
+		// Add featured image.
+		if ( has_post_thumbnail( $post->ID ) ) {
+			$img = wp_get_attachment_image_src( get_post_thumbnail_id( $post->ID ), 'large' );
+			if ( $img ) {
+				$schema['image'] = array(
+					'@type'  => 'ImageObject',
+					'url'    => $img[0],
+					'width'  => $img[1],
+					'height' => $img[2],
+				);
+			}
+		}
+
+		echo '<script type="application/ld+json">'
+			. wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT )
+			. '</script>' . "\n";
+	}
+
+	/**
+	 * Extract step-by-step instructions from post content.
+	 *
+	 * Detection methods (in priority order):
+	 * 1. Headings with "Step N" pattern: <h2>Step 1: Do this</h2> followed by content
+	 * 2. Numbered headings: <h2>1. Do this</h2> or <h3>2) Do that</h3>
+	 * 3. Ordered list items: <ol><li>Do this</li></ol>
+	 *
+	 * @param string $content Post content (raw HTML).
+	 * @return array Array of steps with 'name', 'text', and optionally 'image'.
+	 */
+	private static function extract_howto_steps( string $content ): array {
+		$steps = array();
+
+		// ── Method 1: Headings with "Step N" patterns ─────────────────────
+		// Matches: "Step 1: Title", "Step 2 - Title", "Step 3. Title", "Step 4 Title"
+		if ( preg_match_all(
+			'/<h([2-4])[^>]*>\s*(?:Step\s+\d+\s*[:\-.\)]*\s*)(.+?)\s*<\/h\1>\s*([\s\S]*?)(?=<h[2-4][^>]*>\s*(?:Step\s+\d+|$)|$)/i',
+			$content,
+			$matches,
+			PREG_SET_ORDER
+		) && count( $matches ) >= 2 ) {
+			foreach ( $matches as $m ) {
+				$name = wp_strip_all_tags( trim( $m[2] ) );
+				$body = isset( $m[3] ) ? trim( $m[3] ) : '';
+				if ( empty( $name ) ) continue;
+
+				$step = array( 'name' => $name );
+				$step['text']  = self::extract_step_text( $body );
+				$step['image'] = self::extract_step_image( $body );
+				$steps[] = $step;
+			}
+			if ( count( $steps ) >= 2 ) return $steps;
+			$steps = array(); // Reset if not enough
+		}
+
+		// ── Method 2: Numbered headings ───────────────────────────────────
+		// Matches: "1. Do this", "2) Do that", "3 - Do something"
+		if ( preg_match_all(
+			'/<h([2-4])[^>]*>\s*(\d+)\s*[.\)\-:]+\s*(.+?)\s*<\/h\1>\s*([\s\S]*?)(?=<h[2-4][^>]*>\s*\d+\s*[.\)\-:]|$)/i',
+			$content,
+			$matches,
+			PREG_SET_ORDER
+		) && count( $matches ) >= 2 ) {
+			foreach ( $matches as $m ) {
+				$name = wp_strip_all_tags( trim( $m[3] ) );
+				$body = isset( $m[4] ) ? trim( $m[4] ) : '';
+				if ( empty( $name ) ) continue;
+
+				$step = array( 'name' => $name );
+				$step['text']  = self::extract_step_text( $body );
+				$step['image'] = self::extract_step_image( $body );
+				$steps[] = $step;
+			}
+			if ( count( $steps ) >= 2 ) return $steps;
+			$steps = array();
+		}
+
+		// ── Method 3: Ordered list items ──────────────────────────────────
+		// Extract <ol> blocks and their <li> items.
+		if ( preg_match_all( '/<ol[^>]*>([\s\S]*?)<\/ol>/i', $content, $ol_matches ) ) {
+			foreach ( $ol_matches[1] as $ol_content ) {
+				if ( preg_match_all( '/<li[^>]*>([\s\S]*?)<\/li>/i', $ol_content, $li_matches ) ) {
+					if ( count( $li_matches[1] ) < 2 ) continue;
+
+					$ol_steps = array();
+					foreach ( $li_matches[1] as $li ) {
+						$text = wp_strip_all_tags( trim( $li ) );
+						if ( empty( $text ) || strlen( $text ) < 5 ) continue;
+
+						// Split on first sentence for name vs text.
+						$first_period = strpos( $text, '. ' );
+						if ( false !== $first_period && $first_period < 100 ) {
+							$name = substr( $text, 0, $first_period );
+							$desc = substr( $text, $first_period + 2 );
+						} else {
+							$name = $text;
+							$desc = '';
+						}
+
+						$step = array( 'name' => $name );
+						if ( ! empty( $desc ) ) {
+							$step['text'] = $desc;
+						}
+						$step['image'] = self::extract_step_image( $li );
+						$ol_steps[] = $step;
+					}
+
+					// Use the longest ordered list found (most likely the actual steps).
+					if ( count( $ol_steps ) > count( $steps ) ) {
+						$steps = $ol_steps;
+					}
+				}
+			}
+		}
+
+		return $steps;
+	}
+
+	/**
+	 * Extract clean text from the body content between step headings.
+	 * Strips HTML, shortcodes, and trims to a reasonable length.
+	 */
+	private static function extract_step_text( string $body ): string {
+		if ( empty( $body ) ) return '';
+
+		// Remove nested headings (sub-steps might have h5/h6).
+		$body = preg_replace( '/<h[1-6][^>]*>.*?<\/h[1-6]>/is', '', $body );
+
+		// Strip HTML but keep text content.
+		$text = wp_strip_all_tags( $body );
+		$text = preg_replace( '/\s+/', ' ', trim( $text ) );
+
+		// Trim to first 500 chars to keep schema reasonable.
+		if ( strlen( $text ) > 500 ) {
+			$text = substr( $text, 0, 497 ) . '...';
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Extract the first image URL from step body content.
+	 */
+	private static function extract_step_image( string $body ): string {
+		if ( empty( $body ) ) return '';
+		if ( preg_match( '/<img[^>]+src=["\']([^"\']+)["\']/', $body, $img_match ) ) {
+			return esc_url( $img_match[1] );
 		}
 		return '';
 	}

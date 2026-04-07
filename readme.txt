@@ -4,7 +4,7 @@ Tags: llm seo, ai summary, schema markup, llms.txt, eeat
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.2
+Stable tag: 1.3
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,6 +35,11 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 5. Configure LLMs.txt and Markdown in the LLM Optimization tab.
 
 == Changelog ==
+
+= 1.3 =
+* New: HowTo JSON-LD schema auto-detection — scans post content for step patterns (Step N headings, numbered headings, ordered lists) and injects HowTo schema automatically
+* New: HowTo schema skips injection when Rank Math or Yoast HowTo blocks already exist in post content
+* Fix: robots.txt file operations now use WP_Filesystem API instead of file_put_contents/file_get_contents (WordPress.org compliance)
 
 = 1.2 =
 * New: Content Freshness Alerts — scan for stale posts losing AI visibility (65% of AI citations target content < 1 year old)

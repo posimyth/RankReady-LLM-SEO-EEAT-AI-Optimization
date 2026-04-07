@@ -7,7 +7,7 @@ RankReady is the most complete WordPress plugin for AI search optimization. It c
 [![WordPress](https://img.shields.io/badge/WordPress-6.2%2B-blue.svg)](https://wordpress.org)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)](https://php.net)
 [![License](https://img.shields.io/badge/License-GPL--2.0--or--later-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
-[![Version](https://img.shields.io/badge/Version-1.2-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization)
+[![Version](https://img.shields.io/badge/Version-1.3-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization)
 
 ---
 
@@ -275,6 +275,11 @@ add_filter( 'rankready_inject_schema', function( $inject, $post ) {
 ---
 
 ## Changelog
+
+### 1.3
+- HowTo JSON-LD schema auto-detection from existing post content (Step N headings, numbered headings, ordered lists)
+- HowTo schema duplicate detection (skips when Rank Math/Yoast HowTo blocks exist)
+- WP_Filesystem API for robots.txt operations (WordPress.org compliance)
 
 ### 1.2
 - Content Freshness Alerts with urgency scoring

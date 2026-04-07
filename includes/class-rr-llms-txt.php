@@ -155,21 +155,28 @@ class RR_Llms_Txt {
 
 		$file = ABSPATH . 'robots.txt';
 
-		if ( ! file_exists( $file ) ) {
+		global $wp_filesystem;
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( ! WP_Filesystem() ) {
+			return;
+		}
+
+		if ( ! $wp_filesystem->exists( $file ) ) {
 			// No physical file — the `robots_txt` filter handles it.
 			return;
 		}
 
-		if ( ! is_writable( $file ) ) {
+		if ( ! $wp_filesystem->is_writable( $file ) ) {
 			return;
 		}
 
-		$contents = file_get_contents( $file );
+		$contents = $wp_filesystem->get_contents( $file );
 		if ( false === $contents ) {
 			return;
 		}
 
-		// Remove any existing RankReady block.
 		// Remove any existing RankReady block (handles both old Unicode and new ASCII format).
 		$contents = preg_replace( '/\n?# -+ LLM.*?\(RankReady\).*?\n.*?(?=\n#[^-]|\n?$)/s', '', $contents );
 		$contents = preg_replace( '/\n?#[^\n]*LLM[^\n]*RankReady[^\n]*\n.*?(?=\n#[^-]|\n?$)/s', '', $contents );
@@ -184,7 +191,7 @@ class RR_Llms_Txt {
 			$contents .= $block;
 		}
 
-		file_put_contents( $file, $contents );
+		$wp_filesystem->put_contents( $file, $contents, FS_CHMOD_FILE );
 	}
 
 	// ── Rewrite rules ─────────────────────────────────────────────────────────

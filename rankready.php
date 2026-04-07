@@ -3,7 +3,7 @@
  * Plugin Name:       RankReady – LLM SEO, EEAT & AI Optimization
  * Plugin URI:        https://posimyth.com/rankready/
  * Description:       AI summaries, Article JSON-LD schema with speakable, LLMs.txt generator, Markdown endpoints for LLM crawlers, bulk author changer. Built for LLM SEO, EEAT, and AI Overviews.
- * Version:           1.2
+ * Version:           1.3
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            POSIMYTH Innovations
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 
 // ── Constants (guarded to prevent conflicts) ─────────────────────────────────
 if ( ! defined( 'RR_VERSION' ) ) {
-	define( 'RR_VERSION',  '1.2' );
+	define( 'RR_VERSION',  '1.3' );
 	define( 'RR_FILE',     __FILE__ );
 	define( 'RR_DIR',      plugin_dir_path( __FILE__ ) );
 	define( 'RR_URL',      plugin_dir_url( __FILE__ ) );
@@ -274,12 +274,18 @@ register_deactivation_hook( RR_FILE, function (): void {
 
 	// Clean up RankReady block from physical robots.txt on deactivation.
 	$robots_file = ABSPATH . 'robots.txt';
-	if ( file_exists( $robots_file ) && is_writable( $robots_file ) ) {
-		$contents = file_get_contents( $robots_file );
-		if ( false !== $contents && false !== strpos( $contents, 'RankReady' ) ) {
-			$contents = preg_replace( '/\n?#[^\n]*LLM[^\n]*RankReady[^\n]*\n.*?(?=\n#[^-]|\n?$)/s', '', $contents );
-			$contents = rtrim( $contents ) . "\n";
-			file_put_contents( $robots_file, $contents );
+	if ( file_exists( $robots_file ) ) {
+		global $wp_filesystem;
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( WP_Filesystem() && $wp_filesystem->exists( $robots_file ) && $wp_filesystem->is_writable( $robots_file ) ) {
+			$contents = $wp_filesystem->get_contents( $robots_file );
+			if ( false !== $contents && false !== strpos( $contents, 'RankReady' ) ) {
+				$contents = preg_replace( '/\n?#[^\n]*LLM[^\n]*RankReady[^\n]*\n.*?(?=\n#[^-]|\n?$)/s', '', $contents );
+				$contents = rtrim( $contents ) . "\n";
+				$wp_filesystem->put_contents( $robots_file, $contents, FS_CHMOD_FILE );
+			}
 		}
 	}
 
