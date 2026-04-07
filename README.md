@@ -2,7 +2,7 @@
 
 **The WordPress plugin that gets your content cited by AI.**
 
-RankReady is the most complete WordPress plugin for AI search optimization. It combines all pillars of LLM SEO into a single, lightweight package: AI-generated content, schema markup for AI citations, LLMs.txt, Markdown endpoints, AI crawler management, content freshness monitoring, and E-E-A-T author optimization.
+RankReady is the most complete WordPress plugin for AI search optimization. It combines all pillars of LLM SEO into a single, lightweight package: AI-generated content, intelligent schema markup that auto-detects your content type, LLMs.txt, Markdown endpoints, AI crawler management, content freshness monitoring, and E-E-A-T author optimization.
 
 [![WordPress](https://img.shields.io/badge/WordPress-6.2%2B-blue.svg)](https://wordpress.org)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)](https://php.net)
@@ -38,6 +38,8 @@ No other WordPress plugin combines all of these:
 | FAQ Generator with Brand Injection | Yes | No | No | No | No | No |
 | FAQPage JSON-LD Schema | Yes | Block only | Block only | Block only | No | No |
 | Article Schema + Speakable | Yes | Partial | Partial | Partial | No | No |
+| **HowTo Schema Auto-Detection** | **Yes** | Manual block | Manual block | No | No | No |
+| **ItemList Schema Auto-Detection** | **Yes** | No | No | No | No | No |
 | LLMs.txt + llms-full.txt | Yes | Basic | Basic | Basic | Yes | No |
 | Markdown Endpoints (.md) | Yes | No | No | No | No | No |
 | Per-Crawler Robots.txt (31 bots) | Yes | No | 3 bots | No | No | No |
@@ -75,7 +77,11 @@ Generates concise bullet-point summaries from post content via OpenAI on publish
 - Bulk regenerate with progress tracking and resume
 - Per-post disable toggle
 
-### 3. Article JSON-LD Schema with Speakable
+### 3. Intelligent Schema Auto-Detection (NEW in v1.3)
+
+RankReady now automatically detects your content type and injects the right schema — no manual blocks, no configuration needed.
+
+#### Article JSON-LD Schema with Speakable
 
 Complete Article/BlogPosting schema with AI citation optimization:
 
@@ -87,6 +93,55 @@ Complete Article/BlogPosting schema with AI citation optimization:
 - Automatic detection: skips when Rank Math, Yoast, or AIOSEO is active (no duplicate schema)
 - FAQPage schema injected separately when FAQ data exists
 - Duplicate detection: skips FAQ schema when Rank Math/Yoast/AIOSEO FAQ blocks exist in content
+
+#### HowTo JSON-LD Schema (Auto-Detected)
+
+Scans your existing post content for step-by-step patterns and injects HowTo schema automatically. No manual HowTo blocks needed — if your content already has steps, RankReady detects them.
+
+**How detection works:**
+- Title must contain "how to", "step by step", "tutorial", or "guide to"
+- Content is scanned for step patterns using three methods:
+  1. **Step N headings**: `<h2>Step 1: Do this</h2>`, `<h3>Step 2 - Do that</h3>`
+  2. **Numbered headings**: `<h2>1. Do this</h2>`, `<h3>2) Do that</h3>`
+  3. **Ordered lists**: `<ol><li>First do this</li><li>Then do that</li></ol>`
+- Requires minimum 2 steps to inject schema
+- Extracts step name, description text (up to 500 chars), and step images automatically
+- Skips if Rank Math HowTo block or Yoast How-To block already exists in the post
+
+**Why it matters:**
+- HowTo schema is one of Google's supported rich result types — eligible for step-by-step carousels in search
+- AI models extract HowTo structured data to build direct answers for "how to" queries
+- Rank Math and Yoast require a manual HowTo block — RankReady auto-detects from your existing content
+- Zero content changes needed — your blog posts already have the steps, RankReady just tells search engines about them
+
+**Example**: A post titled "How to Speed Up WordPress" with `<h2>Step 1: Enable Caching</h2>` headings will automatically get HowTo JSON-LD injected in `<head>`.
+
+#### ItemList JSON-LD Schema (Auto-Detected)
+
+Scans your listicle posts and injects ItemList schema automatically. Perfect for "Best of", "Top N", and comparison posts that AI models use to build recommendation answers.
+
+**How detection works:**
+- Title must match listicle patterns:
+  - Number + qualifier: "10 Best WordPress Plugins", "Top 5 Elementor Addons"
+  - Qualifier + number: "Best 10 Tools for SEO", "Top 5 Page Builders"
+  - Number + noun: "7 Plugins Every Developer Needs", "15 Tips for Faster WordPress"
+  - Qualifier without number: "Best Elementor Addons for 2025", "Top WordPress Themes"
+  - Supports 20+ list nouns: tools, plugins, addons, themes, extensions, widgets, alternatives, tips, tricks, strategies, and more
+- Items extracted from content using two methods:
+  1. **Numbered headings**: `<h2>1. Elementor Pro</h2>`, `<h3>#2 Beaver Builder</h3>`
+  2. **Consecutive headings**: Sequences of 3+ h2/h3 headings (auto-filters generic sections like Introduction, FAQ, Conclusion)
+- Requires minimum 3 items to inject schema
+- Extracts per item: name, URL (prioritizes links matching the item name), description (first paragraph, 200 chars), and image
+
+**Why it matters:**
+- ItemList schema tells Google and AI models "this is a curated list of items" — eligible for list rich results
+- AI models like ChatGPT and Perplexity heavily cite listicle pages when answering "best X for Y" queries
+- Products mentioned in ItemList schema get stronger entity recognition in AI knowledge graphs
+- No other WordPress plugin auto-detects listicle content — Rank Math, Yoast, and AIOSEO don't offer this
+
+**Mutually exclusive with HowTo**: A post gets one schema type or the other based on title patterns. If the title matches "how to" patterns, ItemList detection is skipped. This prevents conflicting schema on the same page.
+
+**Example**: A post titled "10 Best Elementor Addons for 2025" with `<h2>1. Essential Addons</h2>` through `<h2>10. Happy Addons</h2>` will automatically get ItemList JSON-LD with all 10 items, their URLs, descriptions, and images.
 
 ### 4. LLMs.txt Generator
 
@@ -167,6 +222,38 @@ Reassign post authors across any post type for E-E-A-T optimization:
 
 ---
 
+## Schema Auto-Detection: How It Decides
+
+RankReady reads your post title and content, then picks the right schema automatically:
+
+```
+Post Published/Updated
+    |
+    |-- Is Rank Math / Yoast / AIOSEO active?
+    |     |-- YES → Skip Article schema (SEO plugin handles it)
+    |     |-- NO  → Inject Article + Speakable JSON-LD
+    |
+    |-- Does FAQ data exist for this post?
+    |     |-- YES → Does Rank Math/Yoast FAQ block exist in content?
+    |     |         |-- YES → Skip FAQPage schema (SEO plugin handles it)
+    |     |         |-- NO  → Inject FAQPage JSON-LD
+    |     |-- NO  → Skip
+    |
+    |-- Title contains "how to", "tutorial", "step by step"?
+    |     |-- YES → Does Rank Math/Yoast HowTo block exist?
+    |     |         |-- YES → Skip (SEO plugin handles it)
+    |     |         |-- NO  → Extract steps from content → Inject HowTo JSON-LD
+    |     |-- NO  → Continue
+    |
+    |-- Title matches listicle pattern ("Best N", "Top N", "N Tools")?
+          |-- YES → Extract items from headings → Inject ItemList JSON-LD
+          |-- NO  → Skip
+```
+
+**Every schema type has duplicate detection.** RankReady never conflicts with Rank Math, Yoast, or AIOSEO. If a competing plugin already handles a schema type, RankReady steps aside.
+
+---
+
 ## How AI Discovers Your Content
 
 ```
@@ -191,7 +278,9 @@ AI Crawler visits your site
     |
     |-- HTML page
           |-- Article JSON-LD + Speakable schema
-          |-- FAQPage JSON-LD
+          |-- FAQPage JSON-LD (if FAQ data exists)
+          |-- HowTo JSON-LD (if tutorial/how-to post)
+          |-- ItemList JSON-LD (if listicle post)
           |-- <link rel="alternate" type="text/markdown">
           |-- Link HTTP header to .md version
           |-- Accept: text/markdown negotiation
@@ -228,7 +317,8 @@ AI Crawler visits your site
 - `esc_html()`, `esc_attr()`, `esc_url()` on all output
 - API keys never exposed in REST responses or health check output
 - Bulk operations capped at 10,000 posts
-- Physical robots.txt guarded against multisite conflicts
+- Physical robots.txt managed via WP_Filesystem API (WordPress.org compliant)
+- Multisite guard on robots.txt sync
 - `flush_rewrite_rules()` deferred to `init` hook (prevents corrupting other plugins' rules)
 - Clean uninstall removes all options and post meta
 
@@ -239,6 +329,7 @@ AI Crawler visits your site
 **SEO Plugins** (read-only integration):
 - Rank Math, Yoast SEO, AIOSEO, SEOPress
 - Auto-detects focus keywords, respects noindex, prevents schema duplication
+- HowTo/ItemList schema skips injection when competing plugin's blocks exist
 
 **Page Builders** (strips wrapper markup in markdown):
 - Elementor, Divi, WPBakery, Beaver Builder, Gutenberg
@@ -270,39 +361,51 @@ add_filter( 'rankready_inject_schema', function( $inject, $post ) {
     if ( $post->ID === 123 ) return false;
     return $inject;
 }, 10, 2 );
+
+// Disable HowTo schema auto-detection
+add_filter( 'rankready_inject_howto_schema', '__return_false' );
+
+// Disable ItemList schema auto-detection
+add_filter( 'rankready_inject_itemlist_schema', '__return_false' );
+
+// Customize ItemList schema output
+add_filter( 'rankready_itemlist_schema', function( $schema, $post ) {
+    $schema['itemListOrder'] = 'https://schema.org/ItemListOrderDescending';
+    return $schema;
+}, 10, 2 );
 ```
 
 ---
 
 ## Changelog
 
-### 1.3
-- HowTo JSON-LD schema auto-detection from existing post content (Step N headings, numbered headings, ordered lists)
-- ItemList JSON-LD schema auto-detection for listicle posts ("Best N", "Top N", "N Tools/Plugins/Addons")
-- HowTo and ItemList are mutually exclusive — automatic detection picks the right schema per post
-- HowTo schema duplicate detection (skips when Rank Math/Yoast HowTo blocks exist)
-- WP_Filesystem API for robots.txt operations (WordPress.org compliance)
+### 1.3 (Latest)
+- **HowTo JSON-LD schema auto-detection** — scans post content for step-by-step patterns (Step N headings, numbered headings, ordered lists) and injects HowTo schema automatically. No manual blocks needed. Skips when Rank Math or Yoast HowTo blocks exist.
+- **ItemList JSON-LD schema auto-detection** — scans listicle posts ("Best N", "Top N", "N Tools/Plugins/Addons") and injects ItemList schema with item names, URLs, descriptions, and images. Supports 20+ list noun patterns and numbered/consecutive heading extraction.
+- **Mutually exclusive schema detection** — HowTo and ItemList are automatically exclusive. Title patterns determine which schema type a post gets. No configuration needed.
+- **WP_Filesystem API** — all robots.txt file operations now use WordPress Filesystem API instead of direct PHP file functions. Ready for WordPress.org plugin directory submission.
+- **Developer filters** — `rankready_inject_howto_schema`, `rankready_inject_itemlist_schema`, and `rankready_itemlist_schema` for full developer control.
 
 ### 1.2
-- Content Freshness Alerts with urgency scoring
-- Expanded to 31 AI crawlers (was 22)
+- Content Freshness Alerts with urgency scoring (critical/high/moderate)
+- Expanded to 31 AI crawlers (was 22) — added anthropic-ai, GoogleOther, Meta-ExternalFetcher, MistralAI-User, PetalBot, Omgilibot, Brightbot, magpie-crawler, DataForSeoBot
 - PHP 8.0+ compatibility fix (FAQ return type)
-- FAQ OpenAI call uses JSON response format
-- Markdown endpoints cached via transients
-- llms-full.txt uses strip_shortcodes for performance
+- FAQ OpenAI call uses JSON response format (prevents markdown-wrapped JSON)
+- Markdown endpoints cached via 5-minute transients (keyed by post_modified)
+- llms-full.txt uses strip_shortcodes for performance (prevents expensive shortcode execution during bulk generation)
 - flush_rewrite_rules deferred to init hook
 
 ### 0.4.6
-- Security hardening: API key leak prevention, SQL prepare, multisite guard
+- Security hardening: API key leak prevention, SQL prepare with positional placeholders, multisite guard
 - get_term_link WP_Error checks in schema
 - FAQ OpenAI HTTP status validation
-- Migration runs only once
+- Migration runs only once via completion flag
 
 ### 0.4.5
 - Schema about/mentions work with ALL custom post types and custom taxonomies
 
 ### 0.4.4
-- Health Check diagnostic tool
+- Health Check diagnostic tool (12-point scan)
 - DataForSEO usage tracking
 - Resume button for bulk operations
 
