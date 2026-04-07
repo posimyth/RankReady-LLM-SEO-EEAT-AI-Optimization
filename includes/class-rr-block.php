@@ -16,6 +16,7 @@ class RR_Block {
 		add_action( 'wp_enqueue_scripts',          array( self::class, 'enqueue_frontend_assets' ) );
 		add_action( 'wp_head',                     array( self::class, 'maybe_inject_schema' ), 1 );
 		add_action( 'wp_head',                     array( self::class, 'maybe_inject_howto_schema' ), 25 );
+		add_action( 'wp_head',                     array( self::class, 'maybe_inject_itemlist_schema' ), 26 );
 		add_filter( 'the_content',                 array( self::class, 'maybe_auto_display' ), 99 );
 
 		// Merge AI-friendly schema into ALL major SEO plugins.
@@ -1190,5 +1191,230 @@ class RR_Block {
 			return esc_url( $img_match[1] );
 		}
 		return '';
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// ITEMLIST SCHEMA — AUTO-DETECTION FOR LISTICLE POSTS
+	//
+	// Scans post content for numbered list items (e.g., "5 Best Elementor Addons").
+	// Detects patterns: "N. Item Name" headings, "Top N", "Best N", "N Best".
+	// Extracts items from existing content — never adds new content to the post.
+	// Mutually exclusive with HowTo schema — a post gets one or the other.
+	// ══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Inject ItemList JSON-LD schema if post content is a listicle.
+	 */
+	public static function maybe_inject_itemlist_schema(): void {
+		if ( ! is_singular() ) return;
+		if ( ! apply_filters( 'rankready_inject_itemlist_schema', true ) ) return;
+
+		$post = get_queried_object();
+		if ( ! $post instanceof \WP_Post || 'publish' !== $post->post_status ) return;
+		if ( ! is_post_type_viewable( $post->post_type ) ) return;
+
+		// Skip if HowTo schema was already injected (mutually exclusive).
+		$title_lower = strtolower( get_the_title( $post->ID ) );
+		$is_howto = (
+			false !== strpos( $title_lower, 'how to' ) ||
+			false !== strpos( $title_lower, 'how-to' ) ||
+			false !== strpos( $title_lower, 'step by step' ) ||
+			false !== strpos( $title_lower, 'step-by-step' ) ||
+			false !== strpos( $title_lower, 'tutorial' ) ||
+			false !== strpos( $title_lower, 'guide to' )
+		);
+		if ( $is_howto ) return;
+
+		// Detect if this is a listicle by title pattern.
+		$has_listicle_title = (bool) preg_match(
+			'/\b(?:best|top|ultimate|essential|must.have|popular|leading|greatest|finest)\s+\d+|\d+\s+(?:best|top|must.have|essential|popular|leading|greatest|finest)\b/i',
+			$title_lower
+		);
+		// Also match "N Things/Tools/Plugins/Addons/Ways/Tips/Resources/Options/Alternatives".
+		if ( ! $has_listicle_title ) {
+			$has_listicle_title = (bool) preg_match(
+				'/\b\d+\s+(?:things|tools|plugins|addons|add-ons|ways|tips|resources|options|alternatives|examples|features|reasons|tricks|methods|strategies|ideas|sites|themes|extensions|widgets|apps|services|solutions|products|picks)\b/i',
+				$title_lower
+			);
+		}
+		// Also match "Best X for Y" without a number.
+		if ( ! $has_listicle_title ) {
+			$has_listicle_title = (bool) preg_match(
+				'/^(?:the\s+)?(?:best|top|ultimate|essential)\s+\w+/i',
+				$title_lower
+			);
+		}
+
+		if ( ! $has_listicle_title ) return;
+
+		// Extract list items from content.
+		$items = self::extract_listicle_items( $post->post_content );
+
+		// Need at least 3 items for a valid listicle.
+		if ( count( $items ) < 3 ) return;
+
+		// Build ItemList JSON-LD.
+		$list_items = array();
+		$position   = 1;
+
+		foreach ( $items as $item ) {
+			$list_element = array(
+				'@type'    => 'ListItem',
+				'position' => $position,
+				'name'     => $item['name'],
+			);
+
+			if ( ! empty( $item['url'] ) ) {
+				$list_element['url'] = $item['url'];
+			}
+
+			if ( ! empty( $item['description'] ) ) {
+				$list_element['description'] = $item['description'];
+			}
+
+			if ( ! empty( $item['image'] ) ) {
+				$list_element['image'] = $item['image'];
+			}
+
+			$list_items[] = $list_element;
+			$position++;
+		}
+
+		$schema = array(
+			'@context'        => 'https://schema.org',
+			'@type'           => 'ItemList',
+			'name'            => get_the_title( $post->ID ),
+			'description'     => wp_strip_all_tags( get_the_excerpt( $post->ID ) ),
+			'url'             => get_permalink( $post->ID ),
+			'numberOfItems'   => count( $list_items ),
+			'itemListElement' => $list_items,
+		);
+
+		$schema = apply_filters( 'rankready_itemlist_schema', $schema, $post );
+
+		echo '<script type="application/ld+json">'
+			. wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT )
+			. '</script>' . "\n";
+	}
+
+	/**
+	 * Extract listicle items from post content.
+	 *
+	 * Detection methods (in priority order):
+	 * 1. Numbered headings: <h2>1. Product Name</h2> or <h3>2. Tool Name</h3>
+	 * 2. Headings with numbering: <h2>Product Name</h2> in sequence (3+ consecutive h2/h3)
+	 *
+	 * @param string $content Post content (raw HTML).
+	 * @return array Array of items with 'name', optionally 'url', 'description', 'image'.
+	 */
+	private static function extract_listicle_items( string $content ): array {
+		$items = array();
+
+		// ── Method 1: Numbered headings ───────────────────────────────────
+		// Matches: "1. Product Name", "2) Tool Name", "3 - Plugin Name", "#1 Plugin Name"
+		if ( preg_match_all(
+			'/<h([2-3])[^>]*>\s*(?:#?\d+[\.\)\-:\s]+)\s*(.+?)\s*<\/h\1>\s*([\s\S]*?)(?=<h[2-3][^>]*>\s*(?:#?\d+[\.\)\-:\s])|$)/i',
+			$content,
+			$matches,
+			PREG_SET_ORDER
+		) && count( $matches ) >= 3 ) {
+			foreach ( $matches as $m ) {
+				$name = wp_strip_all_tags( trim( $m[2] ) );
+				$body = isset( $m[3] ) ? trim( $m[3] ) : '';
+				if ( empty( $name ) ) continue;
+
+				// Clean up name — remove trailing punctuation and common suffixes.
+				$name = preg_replace( '/\s*[\-\–\—]\s*(?:Review|Overview|Pricing|Features).*$/i', '', $name );
+				$name = rtrim( $name, ' :-–—' );
+
+				$item = array( 'name' => $name );
+				$item['url']         = self::extract_item_url( $body, $name );
+				$item['description'] = self::extract_item_description( $body );
+				$item['image']       = self::extract_step_image( $body );
+				$items[] = $item;
+			}
+			if ( count( $items ) >= 3 ) return $items;
+			$items = array();
+		}
+
+		// ── Method 2: Consecutive headings without numbering ──────────────
+		// Matches sequences of h2 or h3 headings followed by content blocks.
+		// Only triggers if 3+ headings at same level appear in sequence.
+		if ( preg_match_all(
+			'/<h([2-3])[^>]*>\s*(.+?)\s*<\/h\1>\s*([\s\S]*?)(?=<h[2-3][^>]*>|$)/i',
+			$content,
+			$matches,
+			PREG_SET_ORDER
+		) && count( $matches ) >= 3 ) {
+			// Filter out generic headings that aren't list items.
+			$skip_patterns = '/^(?:introduction|conclusion|summary|overview|what\s+is|why|how|faq|frequently|final\s+thoughts|wrap.up|table\s+of\s+contents|related|bonus|honorable|key\s+takeaways)/i';
+
+			foreach ( $matches as $m ) {
+				$name = wp_strip_all_tags( trim( $m[2] ) );
+				$body = isset( $m[3] ) ? trim( $m[3] ) : '';
+				if ( empty( $name ) ) continue;
+
+				// Skip generic section headings.
+				if ( preg_match( $skip_patterns, $name ) ) continue;
+				// Skip very short headings (likely not product names).
+				if ( strlen( $name ) < 3 ) continue;
+				// Skip step-like headings (those belong to HowTo).
+				if ( preg_match( '/^step\s+\d+/i', $name ) ) continue;
+
+				$name = rtrim( $name, ' :-–—' );
+
+				$item = array( 'name' => $name );
+				$item['url']         = self::extract_item_url( $body, $name );
+				$item['description'] = self::extract_item_description( $body );
+				$item['image']       = self::extract_step_image( $body );
+				$items[] = $item;
+			}
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Extract the most relevant URL from a listicle item body.
+	 * Prioritizes links that match the item name.
+	 */
+	private static function extract_item_url( string $body, string $name ): string {
+		if ( empty( $body ) ) return '';
+
+		// First try to find a link whose text matches the item name.
+		$name_escaped = preg_quote( $name, '/' );
+		if ( preg_match( '/<a[^>]+href=["\']([^"\']+)["\'][^>]*>.*?' . $name_escaped . '.*?<\/a>/is', $body, $m ) ) {
+			return esc_url( $m[1] );
+		}
+
+		// Otherwise take the first external link.
+		if ( preg_match( '/<a[^>]+href=["\'](https?:\/\/[^"\']+)["\']/', $body, $m ) ) {
+			return esc_url( $m[1] );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Extract a short description from listicle item body content.
+	 */
+	private static function extract_item_description( string $body ): string {
+		if ( empty( $body ) ) return '';
+
+		// Get first paragraph or first meaningful text.
+		if ( preg_match( '/<p[^>]*>([\s\S]*?)<\/p>/i', $body, $m ) ) {
+			$text = wp_strip_all_tags( $m[1] );
+		} else {
+			$text = wp_strip_all_tags( $body );
+		}
+
+		$text = preg_replace( '/\s+/', ' ', trim( $text ) );
+
+		// Trim to 200 chars.
+		if ( strlen( $text ) > 200 ) {
+			$text = substr( $text, 0, 197 ) . '...';
+		}
+
+		return $text;
 	}
 }

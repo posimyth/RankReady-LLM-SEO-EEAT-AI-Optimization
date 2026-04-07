@@ -278,6 +278,8 @@ add_filter( 'rankready_inject_schema', function( $inject, $post ) {
 
 ### 1.3
 - HowTo JSON-LD schema auto-detection from existing post content (Step N headings, numbered headings, ordered lists)
+- ItemList JSON-LD schema auto-detection for listicle posts ("Best N", "Top N", "N Tools/Plugins/Addons")
+- HowTo and ItemList are mutually exclusive — automatic detection picks the right schema per post
 - HowTo schema duplicate detection (skips when Rank Math/Yoast HowTo blocks exist)
 - WP_Filesystem API for robots.txt operations (WordPress.org compliance)
 
