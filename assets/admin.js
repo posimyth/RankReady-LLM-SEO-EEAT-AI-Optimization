@@ -45,25 +45,35 @@
 	var bulkRunning = false;
 
 	if ( bulkStart ) {
-		bulkStart.addEventListener( 'click', function () {
-			var types = [];
-			document.querySelectorAll( '.rr-bulk-type:checked' ).forEach( function ( cb ) {
-				types.push( cb.value );
-			} );
-			if ( ! types.length ) {
-				alert( 'Select at least one post type.' );
-				return;
+		var bulkResume = document.getElementById( 'rr-bulk-resume' );
+
+		function bulkBegin( isResume ) {
+			var payload = isResume ? { resume: true } : {};
+
+			if ( ! isResume ) {
+				var types = [];
+				document.querySelectorAll( '.rr-bulk-type:checked' ).forEach( function ( cb ) {
+					types.push( cb.value );
+				} );
+				if ( ! types.length ) {
+					alert( 'Select at least one post type.' );
+					return;
+				}
+				payload.post_types = types;
 			}
 
 			bulkRunning           = true;
 			bulkStart.disabled    = true;
+			if ( bulkResume ) bulkResume.disabled = true;
 			bulkStart.textContent = 'Running...';
 			bulkStop.style.display  = 'inline-block';
 			bulkProg.style.display  = 'block';
-			bulkBar.style.width     = '0%';
-			bulkStat.textContent    = 'Starting...';
+			if ( ! isResume ) {
+				bulkBar.style.width = '0%';
+			}
+			bulkStat.textContent    = isResume ? 'Resuming...' : 'Starting...';
 
-			rrFetch( '/bulk/start', 'POST', { post_types: types } ).then( function ( data ) {
+			rrFetch( '/bulk/start', 'POST', payload ).then( function ( data ) {
 				if ( data.code ) {
 					bulkStat.textContent = 'Error: ' + ( data.message || 'Unknown error' );
 					bulkFinish();
@@ -80,20 +90,55 @@
 				bulkStat.textContent = 'Failed to start.';
 				bulkFinish();
 			} );
-		} );
+		}
+
+		bulkStart.addEventListener( 'click', function () { bulkBegin( false ); } );
+		if ( bulkResume ) {
+			bulkResume.addEventListener( 'click', function () { bulkBegin( true ); } );
+		}
 
 		bulkStop.addEventListener( 'click', function () {
 			bulkRunning = false;
-			rrFetch( '/bulk/stop', 'POST' );
-			bulkStat.textContent = 'Stopped.';
+			rrFetch( '/bulk/stop', 'POST' ).then( function ( data ) {
+				var msg = 'Stopped at ' + data.done + ' / ' + data.total + '.';
+				if ( data.queue_remaining > 0 ) {
+					msg += ' ' + data.queue_remaining + ' remaining — click Resume to continue.';
+				}
+				bulkStat.textContent = msg;
+			} );
 			bulkFinish();
 		} );
 	}
 
 	function bulkUpdate( data ) {
 		var pct = data.total > 0 ? Math.round( ( data.done / data.total ) * 100 ) : 0;
-		bulkBar.style.width    = pct + '%';
-		bulkStat.textContent   = data.done + ' / ' + data.total + ' posts (' + pct + '%)';
+		bulkBar.style.width = pct + '%';
+		var msg = data.done + ' / ' + data.total + ' posts (' + pct + '%)';
+		if ( data.skipped > 0 ) msg += ' | ' + data.skipped + ' unchanged (skipped)';
+		if ( data.failed > 0 ) msg += ' | ' + data.failed + ' failed';
+		bulkStat.textContent = msg;
+
+		// Show per-post activity log.
+		if ( data.processed && data.processed.length ) {
+			var log = document.getElementById( 'rr-bulk-log' );
+			if ( ! log ) {
+				log = document.createElement( 'div' );
+				log.id = 'rr-bulk-log';
+				log.style.cssText = 'margin-top:8px;max-height:200px;overflow-y:auto;font-size:12px;border:1px solid #e0e0e0;border-radius:4px;padding:6px 10px;background:#fafafa;';
+				bulkProg.appendChild( log );
+			}
+			data.processed.forEach( function ( p ) {
+				var line = document.createElement( 'div' );
+				line.style.cssText = 'padding:2px 0;border-bottom:1px solid #f0f0f0;';
+				var statusColor = p.status === 'generated' ? '#00a32a' : ( p.status === 'failed' ? '#d63638' : '#999' );
+				var tokensStr = p.tokens > 0 ? ' &middot; ' + p.tokens.toLocaleString() + ' tokens' : '';
+				line.innerHTML = '<span style="color:' + statusColor + ';font-weight:600;">' + escHtml( p.status ) + '</span> '
+					+ '<a href="' + escHtml( p.link ) + '" target="_blank" style="text-decoration:none;">' + escHtml( p.title ) + '</a>'
+					+ tokensStr;
+				log.appendChild( line );
+				log.scrollTop = log.scrollHeight;
+			} );
+		}
 	}
 
 	function bulkNext() {
@@ -108,7 +153,11 @@
 			if ( data.running ) {
 				setTimeout( bulkNext, 300 );
 			} else {
-				bulkStat.textContent = 'Done! ' + data.done + ' summaries generated.';
+				var msg = 'Done! ' + data.done + ' processed';
+				if ( data.skipped > 0 ) msg += ', ' + data.skipped + ' skipped (unchanged)';
+				if ( data.failed > 0 ) msg += ', ' + data.failed + ' failed';
+				msg += '.';
+				bulkStat.textContent = msg;
 				bulkFinish();
 			}
 		} ).catch( function () {
@@ -122,6 +171,9 @@
 		bulkStart.disabled     = false;
 		bulkStart.textContent  = 'Start Bulk Generate';
 		bulkStop.style.display = 'none';
+		var bulkResume = document.getElementById( 'rr-bulk-resume' );
+		if ( bulkResume ) bulkResume.disabled = false;
+		// Keep the log visible so user can review results.
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
@@ -331,25 +383,35 @@
 	var faqRunning = false;
 
 	if ( faqStart ) {
-		faqStart.addEventListener( 'click', function () {
-			var types = [];
-			document.querySelectorAll( '.rr-faq-bulk-type:checked' ).forEach( function ( cb ) {
-				types.push( cb.value );
-			} );
-			if ( ! types.length ) {
-				alert( 'Select at least one post type.' );
-				return;
+		var faqResume = document.getElementById( 'rr-faq-bulk-resume' );
+
+		function faqBegin( isResume ) {
+			var payload = isResume ? { resume: true } : {};
+
+			if ( ! isResume ) {
+				var types = [];
+				document.querySelectorAll( '.rr-faq-bulk-type:checked' ).forEach( function ( cb ) {
+					types.push( cb.value );
+				} );
+				if ( ! types.length ) {
+					alert( 'Select at least one post type.' );
+					return;
+				}
+				payload.post_types = types;
 			}
 
 			faqRunning           = true;
 			faqStart.disabled    = true;
+			if ( faqResume ) faqResume.disabled = true;
 			faqStart.textContent = 'Running...';
 			faqStop.style.display  = 'inline-block';
 			faqProg.style.display  = 'block';
-			faqBar.style.width     = '0%';
-			faqStat.textContent    = 'Starting...';
+			if ( ! isResume ) {
+				faqBar.style.width = '0%';
+			}
+			faqStat.textContent = isResume ? 'Resuming...' : 'Starting...';
 
-			rrFetch( '/faq-bulk/start', 'POST', { post_types: types } ).then( function ( data ) {
+			rrFetch( '/faq-bulk/start', 'POST', payload ).then( function ( data ) {
 				if ( data.code ) {
 					faqStat.textContent = 'Error: ' + ( data.message || 'Unknown error' );
 					faqFinish();
@@ -366,20 +428,55 @@
 				faqStat.textContent = 'Failed to start.';
 				faqFinish();
 			} );
-		} );
+		}
+
+		faqStart.addEventListener( 'click', function () { faqBegin( false ); } );
+		if ( faqResume ) {
+			faqResume.addEventListener( 'click', function () { faqBegin( true ); } );
+		}
 
 		faqStop.addEventListener( 'click', function () {
 			faqRunning = false;
-			rrFetch( '/faq-bulk/stop', 'POST' );
-			faqStat.textContent = 'Stopped.';
+			rrFetch( '/faq-bulk/stop', 'POST' ).then( function ( data ) {
+				var msg = 'Stopped at ' + data.done + ' / ' + data.total + '.';
+				if ( data.queue_remaining > 0 ) {
+					msg += ' ' + data.queue_remaining + ' remaining — click Resume to continue.';
+				}
+				faqStat.textContent = msg;
+			} );
 			faqFinish();
 		} );
 	}
 
 	function faqUpdate( data ) {
 		var pct = data.total > 0 ? Math.round( ( data.done / data.total ) * 100 ) : 0;
-		faqBar.style.width    = pct + '%';
-		faqStat.textContent   = data.done + ' / ' + data.total + ' posts (' + pct + '%)';
+		faqBar.style.width = pct + '%';
+		var msg = data.done + ' / ' + data.total + ' posts (' + pct + '%)';
+		if ( data.skipped > 0 ) msg += ' | ' + data.skipped + ' unchanged (skipped)';
+		if ( data.failed > 0 ) msg += ' | ' + data.failed + ' failed';
+		faqStat.textContent = msg;
+
+		// Show per-post activity log.
+		if ( data.processed && data.processed.length ) {
+			var log = document.getElementById( 'rr-faq-bulk-log' );
+			if ( ! log ) {
+				log = document.createElement( 'div' );
+				log.id = 'rr-faq-bulk-log';
+				log.style.cssText = 'margin-top:8px;max-height:200px;overflow-y:auto;font-size:12px;border:1px solid #e0e0e0;border-radius:4px;padding:6px 10px;background:#fafafa;';
+				faqProg.appendChild( log );
+			}
+			data.processed.forEach( function ( p ) {
+				var line = document.createElement( 'div' );
+				line.style.cssText = 'padding:2px 0;border-bottom:1px solid #f0f0f0;';
+				var statusColor = p.status === 'generated' ? '#00a32a' : ( p.status === 'failed' ? '#d63638' : '#999' );
+				var tokensStr = p.tokens > 0 ? ' &middot; ' + p.tokens.toLocaleString() + ' tokens' : '';
+				line.innerHTML = '<span style="color:' + statusColor + ';font-weight:600;">' + escHtml( p.status ) + '</span> '
+					+ '<a href="' + escHtml( p.link ) + '" target="_blank" style="text-decoration:none;">' + escHtml( p.title ) + '</a>'
+					+ tokensStr;
+				log.appendChild( line );
+				log.scrollTop = log.scrollHeight;
+			} );
+		}
 	}
 
 	function faqNext() {
@@ -394,7 +491,11 @@
 			if ( data.running ) {
 				setTimeout( faqNext, 500 );
 			} else {
-				faqStat.textContent = 'Done! ' + data.done + ' FAQs generated.';
+				var msg = 'Done! ' + data.done + ' processed';
+				if ( data.skipped > 0 ) msg += ', ' + data.skipped + ' skipped (unchanged)';
+				if ( data.failed > 0 ) msg += ', ' + data.failed + ' failed';
+				msg += '.';
+				faqStat.textContent = msg;
 				faqFinish();
 			}
 		} ).catch( function () {
@@ -408,6 +509,410 @@
 		faqStart.disabled     = false;
 		faqStart.textContent  = 'Start Bulk FAQ Generate';
 		faqStop.style.display = 'none';
+		var faqResume = document.getElementById( 'rr-faq-bulk-resume' );
+		if ( faqResume ) faqResume.disabled = false;
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * FAQ POSTS LIST
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var faqLoadBtn   = document.getElementById( 'rr-faq-load-posts' );
+	var faqPostsList = document.getElementById( 'rr-faq-posts-list' );
+	var faqPostsTbody = document.getElementById( 'rr-faq-posts-tbody' );
+	var faqPostsCount = document.getElementById( 'rr-faq-posts-count' );
+
+	if ( faqLoadBtn ) {
+		faqLoadBtn.addEventListener( 'click', function () {
+			faqLoadBtn.disabled    = true;
+			faqLoadBtn.textContent = 'Loading...';
+
+			rrFetch( '/faq/posts', 'GET' )
+				.then( function ( data ) {
+					faqLoadBtn.disabled    = false;
+					faqLoadBtn.textContent = 'Refresh List';
+
+					if ( ! data.posts || ! data.posts.length ) {
+						faqPostsCount.textContent   = 'No posts with FAQ found.';
+						faqPostsCount.style.display = 'inline';
+						faqPostsList.style.display  = 'none';
+						return;
+					}
+
+					faqPostsCount.textContent   = data.total + ' post' + ( data.total !== 1 ? 's' : '' ) + ' with FAQ';
+					faqPostsCount.style.display = 'inline';
+
+					var html = '';
+					data.posts.forEach( function ( post ) {
+						html += '<tr>';
+						html += '<td><strong>' + escHtml( post.title ) + '</strong></td>';
+						html += '<td><code style="font-size:12px;">' + escHtml( post.type ) + '</code></td>';
+						html += '<td>' + escHtml( post.generated || '—' ) + '</td>';
+						html += '<td>';
+						html += '<a href="#" onclick="rrEditFaq(' + post.id + ',\'' + escHtml( post.title ).replace( /'/g, '\\&#39;' ) + '\');return false;" style="margin-right:8px;">Edit FAQ</a>';
+						if ( post.edit_url ) {
+							html += '<a href="' + post.edit_url + '" target="_blank" style="margin-right:8px;">Edit Post</a>';
+						}
+						if ( post.view_url ) {
+							html += '<a href="' + post.view_url + '" target="_blank">View</a>';
+						}
+						html += '</td>';
+						html += '</tr>';
+					} );
+
+					faqPostsTbody.innerHTML    = html;
+					faqPostsList.style.display = 'block';
+				} )
+				.catch( function () {
+					faqLoadBtn.disabled    = false;
+					faqLoadBtn.textContent = 'Load FAQ Posts';
+					faqPostsCount.textContent   = 'Failed to load.';
+					faqPostsCount.style.display = 'inline';
+				} );
+		} );
+	}
+
+	function escHtml( str ) {
+		var div       = document.createElement( 'div' );
+		div.textContent = str || '';
+		return div.innerHTML;
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * FAQ INLINE EDIT MODAL
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var faqModal    = null;
+	var faqEditId   = 0;
+	var faqEditData = [];
+
+	function openFaqEditor( postId, postTitle ) {
+		faqEditId = postId;
+
+		if ( ! faqModal ) {
+			faqModal = document.createElement( 'div' );
+			faqModal.id = 'rr-faq-modal';
+			faqModal.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;';
+			document.body.appendChild( faqModal );
+		}
+
+		faqModal.innerHTML = '<div style="background:#fff;border-radius:8px;max-width:700px;width:95%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,0.2);">'
+			+ '<div style="padding:16px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">'
+			+ '<h3 style="margin:0;font-size:15px;">Edit FAQ — ' + escHtml( postTitle ) + '</h3>'
+			+ '<button id="rr-faq-modal-close" type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;">&times;</button>'
+			+ '</div>'
+			+ '<div id="rr-faq-modal-body" style="padding:20px;overflow-y:auto;flex:1;">Loading...</div>'
+			+ '<div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:8px;justify-content:flex-end;">'
+			+ '<button id="rr-faq-modal-save" class="button button-primary" disabled>Save Changes</button>'
+			+ '<span id="rr-faq-modal-status" style="font-size:13px;line-height:30px;margin-right:auto;"></span>'
+			+ '</div>'
+			+ '</div>';
+		faqModal.style.display = 'flex';
+
+		document.getElementById( 'rr-faq-modal-close' ).addEventListener( 'click', closeFaqEditor );
+		faqModal.addEventListener( 'click', function ( e ) {
+			if ( e.target === faqModal ) closeFaqEditor();
+		} );
+
+		rrFetch( '/faq/get/' + postId, 'GET' ).then( function ( data ) {
+			if ( ! data || ! data.faq || ! data.faq.length ) {
+				document.getElementById( 'rr-faq-modal-body' ).innerHTML = '<p style="color:#999;">No FAQ data found.</p>';
+				return;
+			}
+			faqEditData = data.faq;
+			renderFaqEditor();
+		} );
+	}
+
+	function renderFaqEditor() {
+		var body = document.getElementById( 'rr-faq-modal-body' );
+		if ( ! body ) return;
+
+		var html = '';
+		faqEditData.forEach( function ( item, i ) {
+			html += '<div class="rr-faq-edit-item" style="margin-bottom:16px;padding:12px;border:1px solid #e0e0e0;border-radius:4px;">';
+			html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+			html += '<strong style="font-size:12px;color:#666;">Q' + ( i + 1 ) + '</strong>';
+			html += '<button type="button" class="rr-faq-delete-btn" data-index="' + i + '" style="background:none;border:none;color:#d63638;cursor:pointer;font-size:13px;">Remove</button>';
+			html += '</div>';
+			html += '<input type="text" class="rr-faq-q-input" data-index="' + i + '" value="' + escHtml( item.question ) + '" style="width:100%;padding:6px 8px;margin-bottom:8px;border:1px solid #ddd;border-radius:3px;font-weight:600;" />';
+			html += '<textarea class="rr-faq-a-input" data-index="' + i + '" rows="3" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:3px;resize:vertical;">' + escHtml( item.answer ) + '</textarea>';
+			html += '</div>';
+		} );
+		body.innerHTML = html;
+
+		document.getElementById( 'rr-faq-modal-save' ).disabled = false;
+
+		body.querySelectorAll( '.rr-faq-q-input' ).forEach( function ( el ) {
+			el.addEventListener( 'input', function () {
+				faqEditData[ parseInt( el.dataset.index ) ].question = el.value;
+			} );
+		} );
+		body.querySelectorAll( '.rr-faq-a-input' ).forEach( function ( el ) {
+			el.addEventListener( 'input', function () {
+				faqEditData[ parseInt( el.dataset.index ) ].answer = el.value;
+			} );
+		} );
+		body.querySelectorAll( '.rr-faq-delete-btn' ).forEach( function ( btn ) {
+			btn.addEventListener( 'click', function () {
+				faqEditData.splice( parseInt( btn.dataset.index ), 1 );
+				renderFaqEditor();
+			} );
+		} );
+
+		document.getElementById( 'rr-faq-modal-save' ).onclick = saveFaqEdits;
+	}
+
+	function saveFaqEdits() {
+		var saveBtn = document.getElementById( 'rr-faq-modal-save' );
+		var status  = document.getElementById( 'rr-faq-modal-status' );
+		saveBtn.disabled    = true;
+		saveBtn.textContent = 'Saving...';
+		status.textContent  = '';
+
+		rrFetch( '/faq/save/' + faqEditId, 'POST', { faq: faqEditData } )
+			.then( function ( data ) {
+				saveBtn.disabled    = false;
+				saveBtn.textContent = 'Save Changes';
+				if ( data && data.success ) {
+					status.textContent = 'Saved!';
+					status.style.color = '#00a32a';
+					setTimeout( closeFaqEditor, 800 );
+				} else {
+					status.textContent = 'Save failed.';
+					status.style.color = '#d63638';
+				}
+			} )
+			.catch( function () {
+				saveBtn.disabled    = false;
+				saveBtn.textContent = 'Save Changes';
+				status.textContent  = 'Request failed.';
+				status.style.color  = '#d63638';
+			} );
+	}
+
+	function closeFaqEditor() {
+		if ( faqModal ) faqModal.style.display = 'none';
+	}
+
+	// Expose for inline onclick
+	window.rrEditFaq = openFaqEditor;
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * PER-POST TOKEN USAGE
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var tokensLoad  = document.getElementById( 'rr-tokens-load' );
+	var tokensList  = document.getElementById( 'rr-tokens-list' );
+	var tokensTbody = document.getElementById( 'rr-tokens-tbody' );
+	var tokensCount = document.getElementById( 'rr-tokens-count' );
+
+	if ( tokensLoad ) {
+		tokensLoad.addEventListener( 'click', function () {
+			tokensLoad.disabled    = true;
+			tokensLoad.textContent = 'Loading...';
+			tokensCount.style.display = 'none';
+
+			rrFetch( '/token-usage', 'GET' ).then( function ( data ) {
+				tokensLoad.disabled    = false;
+				tokensLoad.textContent = 'Refresh Details';
+
+				if ( ! data.posts || ! data.posts.length ) {
+					tokensCount.textContent   = 'No token usage recorded yet.';
+					tokensCount.style.color   = '#999';
+					tokensCount.style.display = 'inline';
+					tokensList.style.display  = 'none';
+					return;
+				}
+
+				var totalTokens = 0;
+				var html = '';
+				data.posts.forEach( function ( post ) {
+					totalTokens += post.tokens;
+					html += '<tr>';
+					html += '<td><a href="' + escHtml( post.link ) + '" target="_blank" style="text-decoration:none;">' + escHtml( post.title ) + '</a></td>';
+					html += '<td><code style="font-size:11px;">' + escHtml( post.type ) + '</code></td>';
+					html += '<td style="font-weight:600;">' + post.tokens.toLocaleString() + '</td>';
+					html += '<td>';
+					if ( post.edit ) {
+						html += '<a href="' + escHtml( post.edit ) + '" target="_blank" style="font-size:12px;">Edit</a>';
+					}
+					html += '</td>';
+					html += '</tr>';
+				} );
+
+				tokensTbody.innerHTML    = html;
+				tokensList.style.display = 'block';
+				tokensCount.textContent   = data.posts.length + ' post' + ( data.posts.length !== 1 ? 's' : '' ) + ' | ' + totalTokens.toLocaleString() + ' total tokens';
+				tokensCount.style.color   = '#2271b1';
+				tokensCount.style.display = 'inline';
+			} ).catch( function () {
+				tokensLoad.disabled    = false;
+				tokensLoad.textContent = 'Load Per-Post Details';
+			} );
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * ERROR LOG
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var errorsLoad  = document.getElementById( 'rr-errors-load' );
+	var errorsClear = document.getElementById( 'rr-errors-clear' );
+	var errorsList  = document.getElementById( 'rr-errors-list' );
+	var errorsTbody = document.getElementById( 'rr-errors-tbody' );
+	var errorsStatus = document.getElementById( 'rr-errors-status' );
+
+	if ( errorsLoad ) {
+		errorsLoad.addEventListener( 'click', function () {
+			errorsLoad.disabled    = true;
+			errorsLoad.textContent = 'Loading...';
+			errorsStatus.style.display = 'none';
+
+			rrFetch( '/errors', 'GET' ).then( function ( data ) {
+				errorsLoad.disabled    = false;
+				errorsLoad.textContent = 'Refresh Log';
+
+				if ( ! data.errors || ! data.errors.length ) {
+					errorsStatus.textContent   = 'No errors logged.';
+					errorsStatus.style.color   = '#00a32a';
+					errorsStatus.style.display = 'inline';
+					errorsList.style.display   = 'none';
+					return;
+				}
+
+				var html = '';
+				data.errors.forEach( function ( err ) {
+					html += '<tr>';
+					html += '<td style="font-size:12px;white-space:nowrap;">' + escHtml( err.time_ago ) + '</td>';
+					html += '<td><code style="font-size:11px;">' + escHtml( err.source ) + '</code></td>';
+					html += '<td style="font-size:12px;word-break:break-word;">' + escHtml( err.message ) + '</td>';
+					html += '<td>' + ( err.post_id > 0 ? '#' + err.post_id : '—' ) + '</td>';
+					html += '</tr>';
+				} );
+
+				errorsTbody.innerHTML    = html;
+				errorsList.style.display = 'block';
+				errorsStatus.textContent   = data.errors.length + ' error' + ( data.errors.length !== 1 ? 's' : '' );
+				errorsStatus.style.color   = '#d63638';
+				errorsStatus.style.display = 'inline';
+			} ).catch( function () {
+				errorsLoad.disabled    = false;
+				errorsLoad.textContent = 'Load Error Log';
+			} );
+		} );
+
+		errorsClear.addEventListener( 'click', function () {
+			rrFetch( '/errors/clear', 'POST' ).then( function () {
+				errorsTbody.innerHTML  = '';
+				errorsList.style.display   = 'none';
+				errorsStatus.textContent   = 'Log cleared.';
+				errorsStatus.style.color   = '#00a32a';
+				errorsStatus.style.display = 'inline';
+			} );
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * VERIFY API KEY
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var verifyBtn    = document.getElementById( 'rr-verify-key' );
+	var verifyStatus = document.getElementById( 'rr-verify-status' );
+
+	if ( verifyBtn ) {
+		verifyBtn.addEventListener( 'click', function () {
+			var keyField = document.getElementById( 'rr_api_key' );
+			var key      = keyField ? keyField.value : '';
+
+			if ( ! key ) {
+				verifyStatus.textContent    = 'Enter an API key first.';
+				verifyStatus.style.color    = '#d63638';
+				verifyStatus.style.display  = 'inline';
+				return;
+			}
+
+			verifyBtn.disabled    = true;
+			verifyBtn.textContent = 'Verifying...';
+			verifyStatus.style.display = 'none';
+
+			rrFetch( '/verify-key', 'POST', { key: key } )
+				.then( function ( data ) {
+					verifyBtn.disabled    = false;
+					verifyBtn.textContent = 'Verify Key';
+
+					if ( data.valid ) {
+						verifyStatus.textContent   = '✓ ' + data.message;
+						verifyStatus.style.color   = '#00a32a';
+					} else {
+						verifyStatus.textContent   = '✗ ' + data.message;
+						verifyStatus.style.color   = '#d63638';
+					}
+					verifyStatus.style.display = 'inline';
+				} )
+				.catch( function () {
+					verifyBtn.disabled    = false;
+					verifyBtn.textContent = 'Verify Key';
+					verifyStatus.textContent   = '✗ Request failed.';
+					verifyStatus.style.color   = '#d63638';
+					verifyStatus.style.display = 'inline';
+				} );
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * VERIFY DATAFORSEO KEY
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var dfsVerifyBtn    = document.getElementById( 'rr-verify-dfs' );
+	var dfsVerifyStatus = document.getElementById( 'rr-verify-dfs-status' );
+
+	if ( dfsVerifyBtn ) {
+		dfsVerifyBtn.addEventListener( 'click', function () {
+			var loginField = document.getElementById( 'rr_dfs_login' );
+			var pwField    = document.getElementById( 'rr_dfs_password' );
+			var login = loginField ? loginField.value : '';
+			var pw    = pwField ? pwField.value : '';
+
+			// If password contains bullet chars, it's the masked display — use stored value.
+			var payload = {};
+			if ( login ) payload.login = login;
+			if ( pw && pw.indexOf( '\u2022' ) === -1 ) {
+				payload.password = pw;
+			}
+
+			dfsVerifyBtn.disabled    = true;
+			dfsVerifyBtn.textContent = 'Verifying...';
+			dfsVerifyStatus.style.display = 'none';
+
+			rrFetch( '/verify-dfs', 'POST', payload )
+				.then( function ( data ) {
+					dfsVerifyBtn.disabled    = false;
+					dfsVerifyBtn.textContent = 'Verify DataForSEO';
+
+					if ( data.valid ) {
+						dfsVerifyStatus.textContent   = '\u2713 ' + data.message;
+						dfsVerifyStatus.style.color   = '#00a32a';
+					} else {
+						dfsVerifyStatus.textContent   = '\u2717 ' + data.message;
+						dfsVerifyStatus.style.color   = '#d63638';
+						if ( data.login ) {
+							dfsVerifyStatus.textContent += ' (login: ' + data.login + ')';
+						}
+						if ( data.debug ) {
+							dfsVerifyStatus.textContent += ' [' + data.debug + ']';
+						}
+					}
+					dfsVerifyStatus.style.display = 'inline';
+				} )
+				.catch( function () {
+					dfsVerifyBtn.disabled    = false;
+					dfsVerifyBtn.textContent = 'Verify DataForSEO';
+					dfsVerifyStatus.textContent   = '\u2717 Request failed.';
+					dfsVerifyStatus.style.color   = '#d63638';
+					dfsVerifyStatus.style.display = 'inline';
+				} );
+		} );
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
@@ -430,6 +935,305 @@
 				var allChecked = Array.from( crawlerBoxes ).every( function ( c ) { return c.checked; } );
 				selectAll.checked = allChecked;
 			} );
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * START OVER — BULK REGENERATE (clear + regenerate all)
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var soStart   = document.getElementById( 'rr-startover-btn' );
+	var soResume  = document.getElementById( 'rr-startover-resume' );
+	var soStop    = document.getElementById( 'rr-startover-stop' );
+	var soProg    = document.getElementById( 'rr-startover-progress' );
+	var soBar     = document.getElementById( 'rr-startover-bar' );
+	var soStat    = document.getElementById( 'rr-startover-status' );
+	var soRunning = false;
+
+	if ( soStart ) {
+		function soBegin( isResume ) {
+			var payload = isResume ? { resume: true } : {};
+
+			if ( ! isResume ) {
+				var types = [];
+				document.querySelectorAll( '.rr-startover-type:checked' ).forEach( function ( cb ) {
+					types.push( cb.value );
+				} );
+				if ( ! types.length ) {
+					alert( 'Select at least one post type.' );
+					return;
+				}
+				payload.post_types = types;
+			}
+
+			soRunning           = true;
+			soStart.disabled    = true;
+			if ( soResume ) soResume.disabled = true;
+			soStart.textContent = 'Running...';
+			soStop.style.display  = 'inline-block';
+			soProg.style.display  = 'block';
+			if ( ! isResume ) {
+				soBar.style.width = '0%';
+			}
+			soStat.textContent    = isResume ? 'Resuming...' : 'Starting...';
+			soStat.style.display  = 'block';
+			soStat.style.color    = '';
+
+			rrFetch( '/startover-bulk/start', 'POST', payload ).then( function ( data ) {
+				if ( data.code ) {
+					soStat.textContent = 'Error: ' + ( data.message || 'Unknown error' );
+					soFinish();
+					return;
+				}
+				soUpdate( data );
+				if ( data.total === 0 ) {
+					soStat.textContent = 'No published posts found.';
+					soFinish();
+				} else {
+					soNext();
+				}
+			} ).catch( function () {
+				soStat.textContent = 'Request failed.';
+				soFinish();
+			} );
+		}
+
+		function soNext() {
+			if ( ! soRunning ) return;
+			rrFetch( '/startover-bulk/process', 'POST' ).then( function ( data ) {
+				if ( data.code ) {
+					soStat.textContent = 'Error: ' + ( data.message || 'Unknown error' );
+					soFinish();
+					return;
+				}
+				soUpdate( data );
+
+				// Append log entries.
+				if ( data.log && data.log.length ) {
+					var log = document.getElementById( 'rr-startover-log' );
+					if ( ! log ) {
+						log = document.createElement( 'div' );
+						log.id = 'rr-startover-log';
+						log.style.cssText = 'margin-top:12px;max-height:300px;overflow-y:auto;font-size:13px;border:1px solid #ddd;border-radius:4px;padding:8px;background:#fafafa;';
+						soProg.parentNode.insertBefore( log, soProg.nextSibling );
+					}
+					data.log.forEach( function ( entry ) {
+						var p = document.createElement( 'p' );
+						p.style.margin = '2px 0';
+						var color = entry.summary === 'generated' ? '#00a32a' : '#dba617';
+						p.innerHTML = '<a href="' + entry.edit_link + '" target="_blank">' + entry.title + '</a> '
+							+ '<span style="color:' + color + '">Summary: ' + entry.summary + '</span>'
+							+ ' | <span>FAQ: ' + entry.faq + '</span>';
+						log.appendChild( p );
+						log.scrollTop = log.scrollHeight;
+					} );
+				}
+
+				if ( data.done >= data.total ) {
+					soStat.textContent = 'Done! ' + data.done + '/' + data.total + ' posts regenerated.';
+					soStat.style.color = '#00a32a';
+					soFinish();
+				} else {
+					setTimeout( soNext, 500 );
+				}
+			} ).catch( function () {
+				soStat.textContent = 'Request failed — retrying in 5s...';
+				if ( soRunning ) setTimeout( soNext, 5000 );
+			} );
+		}
+
+		function soUpdate( data ) {
+			var pct = data.total > 0 ? Math.round( ( data.done / data.total ) * 100 ) : 0;
+			soBar.style.width  = pct + '%';
+			soStat.textContent = data.done + ' / ' + data.total + ' (' + pct + '%)';
+		}
+
+		function soFinish() {
+			soRunning           = false;
+			soStart.disabled    = false;
+			soStart.textContent = 'Start Over — Bulk Regenerate';
+			soStop.style.display = 'none';
+			if ( soResume ) soResume.disabled = false;
+		}
+
+		soStart.addEventListener( 'click', function () { soBegin( false ); } );
+		if ( soResume ) {
+			soResume.addEventListener( 'click', function () { soBegin( true ); } );
+		}
+
+		soStop.addEventListener( 'click', function () {
+			soRunning = false;
+			rrFetch( '/startover-bulk/stop', 'POST' ).then( function ( data ) {
+				var msg = 'Stopped at ' + data.done + ' / ' + data.total + '.';
+				if ( data.queue_remaining > 0 ) {
+					msg += ' ' + data.queue_remaining + ' remaining — click Resume to continue.';
+				}
+				soStat.textContent = msg;
+			} );
+			soFinish();
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * HEALTH CHECK
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var healthBtn    = document.getElementById( 'rr-health-check' );
+	var healthStatus = document.getElementById( 'rr-health-status' );
+	var healthResults = document.getElementById( 'rr-health-results' );
+	var healthTbody  = document.getElementById( 'rr-health-tbody' );
+
+	if ( healthBtn ) {
+		healthBtn.addEventListener( 'click', function () {
+			healthBtn.disabled    = true;
+			healthBtn.textContent = 'Scanning...';
+			healthStatus.style.display = 'none';
+
+			rrFetch( '/health-check', 'GET' ).then( function ( data ) {
+				healthBtn.disabled    = false;
+				healthBtn.textContent = 'Run Health Check';
+
+				if ( ! data.checks || ! data.checks.length ) {
+					healthStatus.textContent   = 'No results.';
+					healthStatus.style.color   = '#999';
+					healthStatus.style.display = 'inline';
+					return;
+				}
+
+				var html = '';
+				var passCount = 0;
+				var warnCount = 0;
+				var failCount = 0;
+
+				data.checks.forEach( function ( check ) {
+					var icon = '';
+					var rowStyle = '';
+					if ( check.status === 'pass' ) {
+						icon = '<span style="color:#00a32a;font-size:16px;">&#10003;</span>';
+						passCount++;
+					} else if ( check.status === 'warn' ) {
+						icon = '<span style="color:#dba617;font-size:16px;">&#9888;</span>';
+						rowStyle = 'background:#fffbe6;';
+						warnCount++;
+					} else if ( check.status === 'fail' ) {
+						icon = '<span style="color:#d63638;font-size:16px;">&#10007;</span>';
+						rowStyle = 'background:#fef0f0;';
+						failCount++;
+					} else {
+						icon = '<span style="color:#646970;font-size:16px;">&#8505;</span>';
+					}
+
+					html += '<tr style="' + rowStyle + '">';
+					html += '<td style="text-align:center;">' + icon + '</td>';
+					html += '<td style="font-weight:600;">' + escHtml( check.label ) + '</td>';
+					html += '<td>' + escHtml( check.detail ) + '</td>';
+					html += '</tr>';
+				} );
+
+				healthTbody.innerHTML      = html;
+				healthResults.style.display = 'block';
+
+				var summary = passCount + ' passed';
+				if ( warnCount > 0 ) summary += ', ' + warnCount + ' warnings';
+				if ( failCount > 0 ) summary += ', ' + failCount + ' issues';
+				healthStatus.textContent   = summary;
+				healthStatus.style.color   = failCount > 0 ? '#d63638' : ( warnCount > 0 ? '#dba617' : '#00a32a' );
+				healthStatus.style.display = 'inline';
+			} ).catch( function () {
+				healthBtn.disabled    = false;
+				healthBtn.textContent = 'Run Health Check';
+				healthStatus.textContent   = 'Request failed.';
+				healthStatus.style.color   = '#d63638';
+				healthStatus.style.display = 'inline';
+			} );
+		} );
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	 * CONTENT FRESHNESS ALERTS
+	 * ═══════════════════════════════════════════════════════════════════════ */
+
+	var freshBtn     = document.getElementById( 'rr-freshness-scan' );
+	var freshDays    = document.getElementById( 'rr-freshness-days' );
+	var freshStatus  = document.getElementById( 'rr-freshness-status' );
+	var freshSummary = document.getElementById( 'rr-freshness-summary' );
+	var freshResults = document.getElementById( 'rr-freshness-results' );
+	var freshTbody   = document.getElementById( 'rr-freshness-tbody' );
+
+	if ( freshBtn ) {
+		freshBtn.addEventListener( 'click', function () {
+			freshBtn.disabled    = true;
+			freshBtn.textContent = 'Scanning...';
+			freshStatus.style.display  = 'none';
+			freshSummary.style.display = 'none';
+			freshResults.style.display = 'none';
+
+			var days = freshDays ? freshDays.value : 90;
+
+			wp.apiFetch( { path: '/rankready/v1/freshness?days=' + days } )
+				.then( function ( data ) {
+					freshBtn.disabled    = false;
+					freshBtn.textContent = 'Scan Content Freshness';
+
+					var s = data.summary;
+					var freshPct = s.fresh_pct;
+					var pctColor = freshPct >= 80 ? '#00a32a' : ( freshPct >= 50 ? '#dba617' : '#d63638' );
+
+					freshSummary.innerHTML =
+						'<div style="display:flex;gap:16px;flex-wrap:wrap;">' +
+						'<div style="padding:10px 16px;background:#f0f6fc;border:1px solid #c8d8e8;border-radius:6px;">' +
+						'<span style="font-size:22px;font-weight:700;color:' + pctColor + ';">' + freshPct + '%</span>' +
+						'<span style="font-size:13px;color:#646970;margin-left:6px;">Content Fresh</span>' +
+						'</div>' +
+						'<div style="padding:10px 16px;background:#fef8f0;border:1px solid #e8d8c0;border-radius:6px;">' +
+						'<span style="font-size:22px;font-weight:700;color:#1d2327;">' + s.total_stale + '</span>' +
+						'<span style="font-size:13px;color:#646970;margin-left:6px;">Stale Posts (>' + s.threshold_days + ' days)</span>' +
+						'</div>' +
+						'<div style="padding:10px 16px;background:#f0f6fc;border:1px solid #c8d8e8;border-radius:6px;">' +
+						'<span style="font-size:22px;font-weight:700;color:#1d2327;">' + s.total_published + '</span>' +
+						'<span style="font-size:13px;color:#646970;margin-left:6px;">Total Published</span>' +
+						'</div>' +
+						'</div>';
+					freshSummary.style.display = 'block';
+
+					if ( data.stale.length === 0 ) {
+						freshStatus.textContent   = 'All content is fresh!';
+						freshStatus.style.color   = '#00a32a';
+						freshStatus.style.display = 'inline';
+						return;
+					}
+
+					var html = '';
+					data.stale.forEach( function ( p ) {
+						var urgIcon  = p.urgency === 'critical' ? '\u26d4' : ( p.urgency === 'high' ? '\u26a0\ufe0f' : '\u23f3' );
+						var urgColor = p.urgency === 'critical' ? '#d63638' : ( p.urgency === 'high' ? '#dba617' : '#646970' );
+						var modDate  = p.modified.substring( 0, 10 );
+
+						html += '<tr>';
+						html += '<td style="text-align:center;color:' + urgColor + ';font-size:16px;">' + urgIcon + '</td>';
+						html += '<td><strong>' + escHtml( p.title ) + '</strong></td>';
+						html += '<td>' + escHtml( p.type ) + '</td>';
+						html += '<td>' + modDate + '</td>';
+						html += '<td style="color:' + urgColor + ';font-weight:600;">' + p.days_ago + 'd</td>';
+						html += '<td>' + ( p.has_summary ? '\u2705' : '\u274c' ) + '</td>';
+						html += '<td>' + ( p.has_faq ? '\u2705' : '\u274c' ) + '</td>';
+						html += '<td><a href="' + escHtml( p.edit_url ) + '" target="_blank" class="button button-small">Edit</a></td>';
+						html += '</tr>';
+					} );
+
+					freshTbody.innerHTML       = html;
+					freshResults.style.display = 'block';
+
+					freshStatus.textContent   = data.stale.length + ' stale posts found (showing top 50)';
+					freshStatus.style.color   = '#dba617';
+					freshStatus.style.display = 'inline';
+				} ).catch( function () {
+					freshBtn.disabled    = false;
+					freshBtn.textContent = 'Scan Content Freshness';
+					freshStatus.textContent   = 'Request failed.';
+					freshStatus.style.color   = '#d63638';
+					freshStatus.style.display = 'inline';
+				} );
 		} );
 	}
 

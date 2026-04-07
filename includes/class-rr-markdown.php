@@ -124,7 +124,12 @@ class RR_Markdown {
 			exit;
 		}
 
-		$markdown = self::post_to_markdown( $post );
+		$cache_key = 'rr_md_' . $post->ID . '_' . strtotime( $post->post_modified );
+		$markdown  = get_transient( $cache_key );
+		if ( false === $markdown ) {
+			$markdown = self::post_to_markdown( $post );
+			set_transient( $cache_key, $markdown, 5 * MINUTE_IN_SECONDS );
+		}
 		self::serve_markdown( $markdown, get_permalink( $post ) );
 	}
 
@@ -158,7 +163,12 @@ class RR_Markdown {
 			return;
 		}
 
-		$markdown = self::post_to_markdown( $post );
+		$cache_key = 'rr_md_' . $post->ID . '_' . strtotime( $post->post_modified );
+		$markdown  = get_transient( $cache_key );
+		if ( false === $markdown ) {
+			$markdown = self::post_to_markdown( $post );
+			set_transient( $cache_key, $markdown, 5 * MINUTE_IN_SECONDS );
+		}
 		self::serve_markdown( $markdown, get_permalink( $post ) );
 	}
 

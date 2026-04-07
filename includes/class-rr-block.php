@@ -16,6 +16,15 @@ class RR_Block {
 		add_action( 'wp_enqueue_scripts',          array( self::class, 'enqueue_frontend_assets' ) );
 		add_action( 'wp_head',                     array( self::class, 'maybe_inject_schema' ), 1 );
 		add_filter( 'the_content',                 array( self::class, 'maybe_auto_display' ), 99 );
+
+		// Merge AI-friendly schema into ALL major SEO plugins.
+		add_filter( 'rank_math/json_ld',                        array( self::class, 'merge_rankmath_schema' ), 99, 2 );
+		add_filter( 'wpseo_schema_graph',                       array( self::class, 'merge_yoast_schema' ), 99 );
+		add_filter( 'aioseo_schema_output',                     array( self::class, 'merge_aioseo_schema' ), 99 );
+		add_filter( 'seopress_schemas_auto_article_json',       array( self::class, 'merge_seopress_schema' ), 99 );
+		add_filter( 'seopress_pro_get_json_data_article',       array( self::class, 'merge_seopress_schema' ), 99 );
+		add_filter( 'the_seo_framework_schema_graph_data',      array( self::class, 'merge_tsf_schema' ), 99 );
+		add_filter( 'slim_seo_schema_graph',                    array( self::class, 'merge_slim_seo_schema' ), 99 );
 	}
 
 	// ── Block registration ────────────────────────────────────────────────────
@@ -332,15 +341,19 @@ class RR_Block {
 			return $content;
 		}
 
-		// Check post type
-		$enabled_types = (array) get_option( RR_OPT_POST_TYPES, array( 'post' ) );
-		$post          = get_post( $post_id );
-		if ( ! $post || ! in_array( $post->post_type, $enabled_types, true ) ) {
+		// Check post type — all public CPTs.
+		$post = get_post( $post_id );
+		if ( ! $post || ! is_post_type_viewable( $post->post_type ) ) {
 			return $content;
 		}
 
 		// Skip if block is already in content
 		if ( has_block( 'rankready/ai-summary', $post ) ) {
+			return $content;
+		}
+
+		// Skip if a theme builder renders this page — display is handled by the widget.
+		if ( self::is_theme_builder_page( $post_id ) ) {
 			return $content;
 		}
 
@@ -397,54 +410,57 @@ class RR_Block {
 			return;
 		}
 
-		$post_id = get_the_ID();
+		// Use get_queried_object_id() — reliable even when a theme builder template
+		// overrides the layout (get_the_ID() can return the template post ID instead).
+		$post_id = get_queried_object_id();
 		if ( ! $post_id ) {
 			return;
 		}
 
-		// Only enqueue if summary/FAQ exists or auto-display is on
-		$has_summary    = ! empty( get_post_meta( $post_id, RR_META_SUMMARY, true ) );
-		$has_faq        = ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) );
-		$auto_display   = 'on' === get_option( RR_OPT_AUTO_DISPLAY, 'off' );
-		$faq_auto       = 'on' === get_option( RR_OPT_FAQ_AUTO_DISPLAY, 'off' );
-		$has_block      = has_block( 'rankready/ai-summary' );
-		$has_faq_block  = has_block( 'rankready/faq' );
+		// Always load styles when summary or FAQ data exists.
+		// Display can come from: Gutenberg block, Elementor widget, theme builder widget, or auto-display.
+		$has_summary = ! empty( get_post_meta( $post_id, RR_META_SUMMARY, true ) );
+		$has_faq     = ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) );
 
-		$needs_style = ( $has_summary && ( $has_block || $auto_display ) )
-			|| ( $has_faq && ( $has_faq_block || $faq_auto ) );
-
-		if ( $needs_style ) {
+		if ( $has_summary || $has_faq ) {
 			wp_enqueue_style( 'rankready-style', RR_URL . 'assets/style.css', array(), RR_VERSION );
 		}
 	}
 
-	// ── Schema injection ──────────────────────────────────────────────────────
+	// ══════════════════════════════════════════════════════════════════════════
+	// SCHEMA — AI-FRIENDLY PROPERTIES MERGED INTO ANY SEO PLUGIN
+	// ══════════════════════════════════════════════════════════════════════════
 
+	/**
+	 * Standalone schema — only when NO SEO plugin is active.
+	 * When any major SEO plugin is active, we merge via their filters instead.
+	 */
 	public static function maybe_inject_schema(): void {
-		// Skip if major SEO plugins handle schema.
+		// These plugins have dedicated merge filters registered in init().
 		if ( defined( 'RANK_MATH_VERSION' ) )  return;
 		if ( defined( 'WPSEO_VERSION' ) )      return;
 		if ( defined( 'AIOSEO_VERSION' ) )     return;
 		if ( defined( 'SEOPRESS_VERSION' ) )   return;
-		if ( ! is_singular() )                 return;
 
-		// Allow developers to skip schema injection via filter.
+		// The SEO Framework.
+		if ( function_exists( 'the_seo_framework' ) ) return;
+
+		// Slim SEO.
+		if ( defined( 'SLIM_SEO_VER' ) ) return;
+
+		if ( ! is_singular() ) return;
 		if ( ! apply_filters( 'rankready_inject_schema', true ) ) return;
 
-		$post_id = get_the_ID();
+		$post_id = get_queried_object_id();
 		if ( ! $post_id ) return;
 
-		// Only inject schema for enabled post types.
 		$post = get_post( $post_id );
-		if ( ! $post ) return;
-		$enabled_types = (array) get_option( RR_OPT_POST_TYPES, array( 'post' ) );
-		if ( ! in_array( $post->post_type, $enabled_types, true ) ) return;
+		if ( ! $post || ! is_post_type_viewable( $post->post_type ) ) return;
 
 		$raw = (string) get_post_meta( $post_id, RR_META_SUMMARY, true );
 		if ( empty( $raw ) ) return;
 
 		$summary     = RR_Generator::decode_summary( $raw );
-		$post        = get_post( $post_id );
 		$description = '';
 
 		if ( 'bullets' === $summary['type'] && is_array( $summary['data'] ) ) {
@@ -472,11 +488,10 @@ class RR_Block {
 				'name'  => get_bloginfo( 'name' ),
 				'url'   => home_url(),
 			),
-			'speakable'     => array(
-				'@type'       => 'SpeakableSpecification',
-				'cssSelector' => array( '.rr-summary', 'h1', '.entry-title' ),
-			),
 		);
+
+		// Add all AI-friendly properties.
+		$schema = array_merge( $schema, self::build_ai_schema_properties( $post_id, $summary ) );
 
 		$tags = wp_get_post_tags( $post_id, array( 'fields' => 'names' ) );
 		if ( ! empty( $tags ) && ! is_wp_error( $tags ) ) {
@@ -512,7 +527,421 @@ class RR_Block {
 		);
 	}
 
+	// ── Generic helper: find Article node and merge AI props ─────────────────
+
+	private static function merge_into_article_node( array &$nodes, int $post_id ): void {
+		$raw = (string) get_post_meta( $post_id, RR_META_SUMMARY, true );
+		if ( empty( $raw ) ) return;
+
+		$summary  = RR_Generator::decode_summary( $raw );
+		$ai_props = self::build_ai_schema_properties( $post_id, $summary );
+
+		$article_types = array( 'Article', 'BlogPosting', 'NewsArticle', 'TechArticle', 'ScholarlyArticle', 'Report' );
+
+		foreach ( $nodes as &$node ) {
+			if ( ! is_array( $node ) || ! isset( $node['@type'] ) ) continue;
+
+			$type = is_array( $node['@type'] ) ? $node['@type'] : array( $node['@type'] );
+			if ( ! array_intersect( $type, $article_types ) ) continue;
+
+			// Merge — never overwrite existing properties from the SEO plugin.
+			foreach ( $ai_props as $prop => $value ) {
+				if ( ! isset( $node[ $prop ] ) ) {
+					$node[ $prop ] = $value;
+				}
+			}
+			break;
+		}
+		unset( $node );
+	}
+
+	// ── Rank Math: rank_math/json_ld ─────────────────────────────────────────
+
+	public static function merge_rankmath_schema( $data, $jsonld ): array {
+		if ( ! is_singular() || ! is_array( $data ) ) return $data;
+		$post_id = get_queried_object_id();
+		if ( $post_id ) self::merge_into_article_node( $data, $post_id );
+		return $data;
+	}
+
+	// ── Yoast SEO: wpseo_schema_graph ────────────────────────────────────────
+
+	public static function merge_yoast_schema( $graph ): array {
+		if ( ! is_singular() || ! is_array( $graph ) ) return $graph;
+		$post_id = get_queried_object_id();
+		if ( $post_id ) self::merge_into_article_node( $graph, $post_id );
+		return $graph;
+	}
+
+	// ── AIOSEO: aioseo_schema_output ─────────────────────────────────────────
+
+	public static function merge_aioseo_schema( $graphs ): array {
+		if ( ! is_singular() || ! is_array( $graphs ) ) return $graphs;
+		$post_id = get_queried_object_id();
+		if ( ! $post_id ) return $graphs;
+
+		// AIOSEO wraps graphs differently — may have @graph array or flat.
+		foreach ( $graphs as &$graph ) {
+			if ( is_array( $graph ) && isset( $graph['@graph'] ) && is_array( $graph['@graph'] ) ) {
+				self::merge_into_article_node( $graph['@graph'], $post_id );
+			} elseif ( is_array( $graph ) && isset( $graph['@type'] ) ) {
+				$single = array( &$graph );
+				self::merge_into_article_node( $single, $post_id );
+			}
+		}
+		unset( $graph );
+
+		return $graphs;
+	}
+
+	// ── SEOPress: seopress_schemas_auto_article_json / seopress_pro_get_json_data_article
+
+	public static function merge_seopress_schema( $schema ) {
+		if ( ! is_singular() || ! is_array( $schema ) ) return $schema;
+		$post_id = get_queried_object_id();
+		if ( ! $post_id ) return $schema;
+
+		$raw = (string) get_post_meta( $post_id, RR_META_SUMMARY, true );
+		if ( empty( $raw ) ) return $schema;
+
+		$summary  = RR_Generator::decode_summary( $raw );
+		$ai_props = self::build_ai_schema_properties( $post_id, $summary );
+
+		// SEOPress passes the Article schema directly as an assoc array.
+		foreach ( $ai_props as $prop => $value ) {
+			if ( ! isset( $schema[ $prop ] ) ) {
+				$schema[ $prop ] = $value;
+			}
+		}
+
+		return $schema;
+	}
+
+	// ── The SEO Framework: the_seo_framework_schema_graph_data ───────────────
+
+	public static function merge_tsf_schema( $graph ): array {
+		if ( ! is_singular() || ! is_array( $graph ) ) return $graph;
+		$post_id = get_queried_object_id();
+		if ( $post_id ) self::merge_into_article_node( $graph, $post_id );
+		return $graph;
+	}
+
+	// ── Slim SEO: slim_seo_schema_graph ──────────────────────────────────────
+
+	public static function merge_slim_seo_schema( $graph ): array {
+		if ( ! is_singular() || ! is_array( $graph ) ) return $graph;
+		$post_id = get_queried_object_id();
+		if ( $post_id ) self::merge_into_article_node( $graph, $post_id );
+		return $graph;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// BUILD AI-FRIENDLY SCHEMA PROPERTIES (all dynamic, no hardcoding)
+	// ══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Returns all AI-optimization properties to merge into Article schema.
+	 * Everything is extracted dynamically from post content and meta.
+	 *
+	 * Properties added (none generated by any SEO plugin):
+	 *  - speakable:            Voice search (Google Assistant, Alexa, Siri)
+	 *  - hasPart:              WebPageElement for Key Takeaways — LLMs extract this directly
+	 *  - abstract:             Machine-readable summary for AI citation
+	 *  - about:                Primary topic entities from categories
+	 *  - mentions:             Secondary entities from tags
+	 *  - lastReviewed:         Freshness/trust signal from FAQ review date
+	 *  - reviewedBy:           E-E-A-T signal — who verified the content
+	 *  - significantLink:      Important internal links (relationship graph)
+	 *  - citation:             External authoritative links (fact-checking chain)
+	 *  - accessibilityFeature: Structural signals (TOC, navigation, alt text)
+	 */
+	private static function build_ai_schema_properties( int $post_id, array $summary ): array {
+		$props = array();
+		$post  = get_post( $post_id );
+
+		// ── 1. Speakable — voice search / Google Assistant ─────────────
+		$speakable_selectors = array( 'h1', '.entry-title' );
+		if ( ! empty( get_post_meta( $post_id, RR_META_SUMMARY, true ) ) ) {
+			$speakable_selectors[] = '.rr-summary';
+		}
+		if ( ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) ) ) {
+			$speakable_selectors[] = '.rr-faq-wrapper';
+		}
+		$props['speakable'] = array(
+			'@type'       => 'SpeakableSpecification',
+			'cssSelector' => $speakable_selectors,
+		);
+
+		// ── 2. hasPart — Key Takeaways as extractable WebPageElement ───
+		if ( 'bullets' === $summary['type'] && is_array( $summary['data'] ) && ! empty( $summary['data'] ) ) {
+			$label = (string) get_option( RR_OPT_LABEL, 'Key Takeaways' );
+			$props['hasPart'] = array(
+				array(
+					'@type'               => 'WebPageElement',
+					'isAccessibleForFree' => true,
+					'cssSelector'         => '.rr-summary',
+					'name'                => $label,
+					'text'                => implode( '. ', $summary['data'] ) . '.',
+				),
+			);
+
+			// Also add FAQ section as a hasPart if it exists.
+			$faq_data = get_post_meta( $post_id, RR_META_FAQ, true );
+			if ( ! empty( $faq_data ) ) {
+				$faq_items = json_decode( $faq_data, true );
+				if ( is_array( $faq_items ) && ! empty( $faq_items ) ) {
+					$faq_text = array();
+					foreach ( array_slice( $faq_items, 0, 5 ) as $item ) {
+						if ( ! empty( $item['question'] ) && ! empty( $item['answer'] ) ) {
+							$faq_text[] = $item['question'] . ' ' . $item['answer'];
+						}
+					}
+					if ( ! empty( $faq_text ) ) {
+						$props['hasPart'][] = array(
+							'@type'               => 'WebPageElement',
+							'isAccessibleForFree' => true,
+							'cssSelector'         => '.rr-faq-wrapper',
+							'name'                => 'Frequently Asked Questions',
+							'text'                => implode( ' ', $faq_text ),
+						);
+					}
+				}
+			}
+		}
+
+		// ── 3. abstract — machine-readable summary for AI citation ─────
+		if ( 'bullets' === $summary['type'] && is_array( $summary['data'] ) && ! empty( $summary['data'] ) ) {
+			$props['abstract'] = implode( '. ', $summary['data'] ) . '.';
+		} elseif ( 'text' === $summary['type'] && ! empty( $summary['data'] ) ) {
+			$props['abstract'] = (string) $summary['data'];
+		}
+
+		// ── 4. about — primary topic entities from hierarchical taxonomies (categories) ──
+		$about = array();
+		if ( $post ) {
+			$taxonomies = get_object_taxonomies( $post->post_type, 'objects' );
+			foreach ( $taxonomies as $tax ) {
+				if ( ! $tax->hierarchical || ! $tax->public ) continue;
+				$terms = get_the_terms( $post_id, $tax->name );
+				if ( ! empty( $terms ) && ! is_wp_error( $terms ) ) {
+					foreach ( $terms as $term ) {
+						if ( 'uncategorized' === $term->slug ) continue;
+						$term_url = get_term_link( $term );
+						if ( is_wp_error( $term_url ) ) continue;
+						$about[] = array(
+							'@type' => 'Thing',
+							'name'  => $term->name,
+							'url'   => $term_url,
+						);
+						if ( count( $about ) >= 5 ) break 2;
+					}
+				}
+			}
+		}
+		if ( ! empty( $about ) ) {
+			$props['about'] = count( $about ) === 1 ? $about[0] : $about;
+		}
+
+		// ── 5. mentions — secondary entities from non-hierarchical taxonomies (tags) ──
+		$mentions = array();
+		if ( $post ) {
+			$taxonomies = get_object_taxonomies( $post->post_type, 'objects' );
+			foreach ( $taxonomies as $tax ) {
+				if ( $tax->hierarchical || ! $tax->public ) continue;
+				$terms = get_the_terms( $post_id, $tax->name );
+				if ( ! empty( $terms ) && ! is_wp_error( $terms ) ) {
+					foreach ( $terms as $term ) {
+						$term_url = get_term_link( $term );
+						if ( is_wp_error( $term_url ) ) continue;
+						$mentions[] = array(
+							'@type' => 'Thing',
+							'name'  => $term->name,
+							'url'   => $term_url,
+						);
+						if ( count( $mentions ) >= 8 ) break 2;
+					}
+				}
+			}
+		}
+		if ( ! empty( $mentions ) ) {
+			$props['mentions'] = $mentions;
+		}
+
+		// ── 6. lastReviewed — freshness signal from FAQ review date ────
+		$faq_reviewed = get_post_meta( $post_id, RR_META_FAQ_GENERATED, true );
+		if ( ! empty( $faq_reviewed ) ) {
+			$props['lastReviewed'] = gmdate( 'Y-m-d', (int) $faq_reviewed );
+		}
+
+		// ── 7. reviewedBy — E-E-A-T signal: content author ────────────
+		if ( $post ) {
+			$author_name = get_the_author_meta( 'display_name', $post->post_author );
+			$author_url  = get_author_posts_url( $post->post_author );
+			$author_desc = get_the_author_meta( 'description', $post->post_author );
+
+			if ( ! empty( $author_name ) ) {
+				$reviewed_by = array(
+					'@type' => 'Person',
+					'name'  => $author_name,
+					'url'   => $author_url,
+				);
+				if ( ! empty( $author_desc ) ) {
+					$reviewed_by['description'] = wp_trim_words( $author_desc, 30 );
+				}
+				$props['reviewedBy'] = $reviewed_by;
+			}
+		}
+
+		// ── 8 & 9. significantLink + citation — from post content links ──
+		if ( $post && ! empty( $post->post_content ) ) {
+			$links = self::extract_content_links( $post->post_content, $post_id );
+
+			if ( ! empty( $links['internal'] ) ) {
+				$props['significantLink'] = array_slice( $links['internal'], 0, 10 );
+			}
+			if ( ! empty( $links['external'] ) ) {
+				$citations = array();
+				foreach ( array_slice( $links['external'], 0, 10 ) as $ext_url ) {
+					$citations[] = array(
+						'@type' => 'CreativeWork',
+						'url'   => $ext_url,
+					);
+				}
+				$props['citation'] = $citations;
+			}
+		}
+
+		// ── 10. accessibilityFeature — structural quality signals ──────
+		$features = array();
+		if ( $post && ! empty( $post->post_content ) ) {
+			// Detect TOC (RankReady TOC, The Plus TOC widget, common TOC patterns).
+			if ( preg_match( '/class="[^"]*(?:table-of-contents|toc-widget|ez-toc|lwptoc|rr-toc)[^"]*"/i', $post->post_content )
+				|| preg_match( '/<!-- wp:rank-math\/toc-block/i', $post->post_content )
+				|| has_block( 'rank-math/toc-block', $post )
+			) {
+				$features[] = 'tableOfContents';
+			}
+
+			// Detect headings (h2/h3) indicating structural navigation.
+			if ( preg_match_all( '/<h[23][^>]*>/i', $post->post_content, $h_matches ) && count( $h_matches[0] ) >= 2 ) {
+				$features[] = 'structuralNavigation';
+			}
+
+			// Detect alt text on images.
+			if ( preg_match( '/<img[^>]+alt="[^"]+"/i', $post->post_content ) ) {
+				$features[] = 'alternativeText';
+			}
+		}
+
+		// Summary exists = we have a long description / abstract.
+		if ( ! empty( $summary['data'] ) ) {
+			$features[] = 'longDescription';
+		}
+
+		if ( ! empty( $features ) ) {
+			$props['accessibilityFeature'] = array_unique( $features );
+		}
+
+		return apply_filters( 'rankready_ai_schema_properties', $props, $post_id );
+	}
+
+	// ── Extract links from post content ──────────────────────────────────────
+
+	/**
+	 * Parse all <a href> from post content and split into internal vs external.
+	 * Returns array with 'internal' and 'external' URL arrays.
+	 */
+	private static function extract_content_links( string $content, int $post_id ): array {
+		$result = array( 'internal' => array(), 'external' => array() );
+
+		if ( ! preg_match_all( '/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>/i', $content, $matches ) ) {
+			return $result;
+		}
+
+		$site_host = wp_parse_url( home_url(), PHP_URL_HOST );
+		$self_url  = get_permalink( $post_id );
+		$seen      = array();
+
+		foreach ( $matches[1] as $url ) {
+			$url = esc_url( $url );
+			if ( empty( $url ) || isset( $seen[ $url ] ) ) continue;
+			if ( $url === $self_url ) continue; // skip self-links
+			if ( 0 === strpos( $url, '#' ) ) continue; // skip anchors
+
+			$seen[ $url ] = true;
+			$parsed_host  = wp_parse_url( $url, PHP_URL_HOST );
+
+			if ( $parsed_host && $parsed_host === $site_host ) {
+				$result['internal'][] = $url;
+			} elseif ( $parsed_host && false === strpos( $url, 'javascript:' ) ) {
+				// Skip common non-citation domains.
+				$skip = array( 'facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'linkedin.com', 'youtube.com', 'pinterest.com', 'tiktok.com', 'wa.me', 'whatsapp.com', 't.me', 'telegram.org', 'play.google.com', 'apps.apple.com' );
+				$is_social = false;
+				foreach ( $skip as $s ) {
+					if ( false !== strpos( $parsed_host, $s ) ) {
+						$is_social = true;
+						break;
+					}
+				}
+				if ( ! $is_social ) {
+					$result['external'][] = $url;
+				}
+			}
+		}
+
+		return $result;
+	}
+
 	// ── Helpers ───────────────────────────────────────────────────────────────
+
+	/**
+	 * Check if a theme builder (Elementor Pro or Nexter) renders this page.
+	 * The blog post itself is NOT built with Elementor — the theme builder template is.
+	 * We detect this by checking if Elementor's single template action has fired,
+	 * or if the conditions manager has a document assigned for 'single'.
+	 */
+	public static function is_theme_builder_page( int $post_id ): bool {
+		if ( ! class_exists( '\Elementor\Plugin' ) ) {
+			return false;
+		}
+
+		// Post itself built with Elementor (page/landing page edited in Elementor).
+		if ( get_post_meta( $post_id, '_elementor_edit_mode', true ) ) {
+			return true;
+		}
+
+		// Elementor Pro theme builder is rendering a single template.
+		// This action fires BEFORE the Post Content widget calls the_content.
+		if ( did_action( 'elementor/theme/before_do_single' ) ) {
+			return true;
+		}
+
+		// Fallback: check via Elementor Pro conditions manager.
+		if ( class_exists( '\ElementorPro\Modules\ThemeBuilder\Module' ) ) {
+			$theme_module = \ElementorPro\Modules\ThemeBuilder\Module::instance();
+			if ( method_exists( $theme_module, 'get_conditions_manager' ) ) {
+				$conditions = $theme_module->get_conditions_manager();
+				if ( method_exists( $conditions, 'get_documents_for_location' ) ) {
+					$docs = $conditions->get_documents_for_location( 'single' );
+					if ( ! empty( $docs ) ) {
+						return true;
+					}
+				}
+			}
+		}
+
+		// Nexter Theme Builder detection.
+		if ( did_action( 'nexter_single_builder_render' ) ) {
+			return true;
+		}
+		// Nexter stores active template assignments; check for single template.
+		$nxt_single = get_option( 'nexter_builder_single_template', '' );
+		if ( ! empty( $nxt_single ) ) {
+			return true;
+		}
+
+		return false;
+	}
 
 	public static function validate_heading_tag( $tag ): string {
 		$allowed = array( 'h2', 'h3', 'h4', 'h5', 'h6', 'p' );

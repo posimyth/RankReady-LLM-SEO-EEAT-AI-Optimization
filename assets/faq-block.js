@@ -77,6 +77,10 @@
 			var error      = _error[0]; var setError = _error[1];
 			var _generated = useState( '' );
 			var generated  = _generated[0]; var setGenerated = _generated[1];
+			var _dragIndex = useState( -1 );
+			var dragIndex  = _dragIndex[0]; var setDragIndex = _dragIndex[1];
+			var _dragOver  = useState( -1 );
+			var dragOver   = _dragOver[0]; var setDragOver = _dragOver[1];
 
 			var postId = useSelect( function ( select ) {
 				return select( 'core/editor' ).getCurrentPostId();
@@ -299,19 +303,47 @@
 						: faq.length > 0
 							? el( 'div', { className: 'rr-faq-list' },
 								faq.map( function ( item, i ) {
+									var itemStyle = Object.assign( {}, dividerStyle, {
+										cursor: 'grab',
+										opacity: dragIndex === i ? 0.4 : 1,
+										borderTop: dragOver === i ? '2px solid #2271b1' : '2px solid transparent',
+										transition: 'opacity 0.15s',
+									} );
 									return el( 'div', {
 										className: 'rr-faq-item',
 										key: i,
-										style: dividerStyle,
+										style: itemStyle,
+										draggable: true,
+										onDragStart: function ( e ) { setDragIndex( i ); e.dataTransfer.effectAllowed = 'move'; },
+										onDragOver: function ( e ) { e.preventDefault(); setDragOver( i ); },
+										onDragLeave: function () { setDragOver( -1 ); },
+										onDrop: function ( e ) {
+											e.preventDefault();
+											setDragOver( -1 );
+											if ( dragIndex === i || dragIndex < 0 ) return;
+											var reordered = [].concat( faq );
+											var moved = reordered.splice( dragIndex, 1 )[0];
+											reordered.splice( i, 0, moved );
+											setFaq( reordered );
+											setDragIndex( -1 );
+											// Auto-save reordered FAQ
+											apiFetch( { path: '/rankready/v1/faq/save/' + postId, method: 'POST', data: { faq: reordered } } ).catch( function () {} );
+										},
+										onDragEnd: function () { setDragIndex( -1 ); setDragOver( -1 ); },
 									},
-										el( 'h4', {
-											className: 'rr-faq-question',
-											style: questionStyle,
-										}, item.question ),
-										el( 'p', {
-											className: 'rr-faq-answer',
-											style: answerStyle,
-										}, item.answer )
+										el( 'div', { style: { display: 'flex', alignItems: 'flex-start', gap: '8px' } },
+											el( 'span', { style: { color: '#999', fontSize: '12px', cursor: 'grab', userSelect: 'none', lineHeight: '1.6' } }, '\u2261' ),
+											el( 'div', { style: { flex: 1 } },
+												el( 'h4', {
+													className: 'rr-faq-question',
+													style: questionStyle,
+												}, item.question ),
+												el( 'p', {
+													className: 'rr-faq-answer',
+													style: answerStyle,
+												}, item.answer )
+											)
+										)
 									);
 								} ),
 								attrs.showReviewed && generated && el( 'p', {

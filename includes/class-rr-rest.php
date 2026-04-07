@@ -57,12 +57,17 @@ class RR_Rest {
 			'permission_callback' => array( self::class, 'is_admin_user' ),
 			'args'                => array(
 				'post_types' => array(
-					'required'          => true,
+					'required'          => false,
 					'type'              => 'array',
 					'items'             => array( 'type' => 'string' ),
+					'default'           => array(),
 					'sanitize_callback' => function ( $value ) {
 						return is_array( $value ) ? array_map( 'sanitize_key', $value ) : array();
 					},
+				),
+				'resume' => array(
+					'type'    => 'boolean',
+					'default' => false,
 				),
 			),
 		) );
@@ -121,6 +126,31 @@ class RR_Rest {
 			'permission_callback' => array( self::class, 'is_admin_user' ),
 		) );
 
+		// ── API Key Verification ──────────────────────────────────────────────
+
+		register_rest_route( self::NS, '/verify-key', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'verify_api_key' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+			'args'                => array(
+				'key' => array(
+					'required' => true,
+					'type'     => 'string',
+					'sanitize_callback' => 'sanitize_text_field',
+				),
+			),
+		) );
+
+		register_rest_route( self::NS, '/verify-dfs', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'verify_dfs_key' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+			'args'                => array(
+				'login'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+				'password' => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+			),
+		) );
+
 		// ── FAQ endpoints ─────────────────────────────────────────────────────
 
 		register_rest_route( self::NS, '/faq/generate/(?P<id>\d+)', array(
@@ -153,11 +183,13 @@ class RR_Rest {
 			'permission_callback' => array( self::class, 'is_admin_user' ),
 			'args'                => array(
 				'post_types' => array(
-					'required' => true, 'type' => 'array',
+					'required' => false, 'type' => 'array',
 					'items'    => array( 'type' => 'string' ),
+					'default'  => array(),
 					'sanitize_callback' => function ( $v ) { return is_array( $v ) ? array_map( 'sanitize_key', $v ) : array(); },
 				),
 				'skip_existing' => array( 'type' => 'boolean', 'default' => true ),
+				'resume'        => array( 'type' => 'boolean', 'default' => false ),
 			),
 		) );
 
@@ -170,6 +202,94 @@ class RR_Rest {
 		register_rest_route( self::NS, '/faq-bulk/stop', array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( self::class, 'faq_bulk_stop' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		// ── FAQ Posts List ────────────────────────────────────────────────────
+
+		register_rest_route( self::NS, '/faq/posts', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'faq_posts_list' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		// ── Error Log ────────────────────────────────────────────────────────
+
+		register_rest_route( self::NS, '/errors', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'get_errors' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		register_rest_route( self::NS, '/errors/clear', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'clear_errors' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		// ── Token Usage per post ────────────────────────────────────────────
+		register_rest_route( self::NS, '/token-usage', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'get_token_usage' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		// ── Start Over — clear + regenerate both summary and FAQ ────────
+		register_rest_route( self::NS, '/start-over/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'start_over' ),
+			'permission_callback' => array( self::class, 'can_edit_post' ),
+			'args'                => array_merge( self::post_id_arg(), array(
+				'keyword' => array( 'type' => 'string', 'default' => '' ),
+			) ),
+		) );
+
+		// ── Start Over Bulk — clear + regenerate all posts ──────────────
+		register_rest_route( self::NS, '/startover-bulk/start', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'startover_bulk_start' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+			'args'                => array(
+				'post_types' => array(
+					'required' => false, 'type' => 'array',
+					'items'    => array( 'type' => 'string' ),
+					'default'  => array(),
+					'sanitize_callback' => function ( $v ) { return is_array( $v ) ? array_map( 'sanitize_key', $v ) : array(); },
+				),
+				'resume' => array( 'type' => 'boolean', 'default' => false ),
+			),
+		) );
+
+		register_rest_route( self::NS, '/startover-bulk/process', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'startover_bulk_process' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		register_rest_route( self::NS, '/startover-bulk/stop', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( self::class, 'startover_bulk_stop' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+		) );
+
+		// ── Content Freshness Alerts ─────────────────────────────────────────
+		register_rest_route( self::NS, '/freshness', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'content_freshness' ),
+			'permission_callback' => array( self::class, 'is_admin_user' ),
+			'args'                => array(
+				'days' => array(
+					'type'    => 'integer',
+					'default' => 90,
+					'sanitize_callback' => 'absint',
+				),
+			),
+		) );
+
+		// ── Health Check diagnostic ──────────────────────────────────────────
+		register_rest_route( self::NS, '/health-check', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( self::class, 'health_check' ),
 			'permission_callback' => array( self::class, 'is_admin_user' ),
 		) );
 	}
@@ -245,11 +365,234 @@ class RR_Rest {
 		return new WP_REST_Response( array( 'success' => true, 'summary' => $summary ), 200 );
 	}
 
+	// ── Start Over — clear all data and regenerate both summary + FAQ ────────
+
+	public static function start_over( $request ) {
+		$post_id = (int) $request->get_param( 'id' );
+		$keyword = sanitize_text_field( (string) $request->get_param( 'keyword' ) );
+
+		if ( empty( get_option( RR_OPT_KEY ) ) ) {
+			return new WP_Error( 'rr_no_api_key', __( 'OpenAI API key not configured.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		// Clear existing summary data.
+		delete_post_meta( $post_id, RR_META_SUMMARY );
+		delete_post_meta( $post_id, RR_META_HASH );
+		delete_post_meta( $post_id, RR_META_GENERATED );
+
+		// Clear existing FAQ data.
+		delete_post_meta( $post_id, RR_META_FAQ );
+		delete_post_meta( $post_id, RR_META_FAQ_HASH );
+		delete_post_meta( $post_id, RR_META_FAQ_GENERATED );
+		delete_post_meta( $post_id, RR_META_FAQ_KEYWORD );
+
+		$result = array(
+			'summary' => null,
+			'faq'     => null,
+		);
+
+		// Regenerate summary.
+		$summary = RR_Generator::force_generate( $post_id );
+		if ( false !== $summary ) {
+			$result['summary'] = 'generated';
+		} else {
+			$result['summary'] = 'failed';
+		}
+
+		// Regenerate FAQ (if DFS credentials available).
+		$has_dfs = ! empty( get_option( RR_OPT_DFS_LOGIN ) ) && ! empty( get_option( RR_OPT_DFS_PASSWORD ) );
+		if ( $has_dfs ) {
+			$faq = RR_Faq::generate_faq( $post_id, $keyword );
+			if ( is_array( $faq ) && ! is_wp_error( $faq ) ) {
+				$result['faq'] = 'generated';
+				$result['faq_count'] = count( $faq );
+			} else {
+				$result['faq'] = 'failed';
+				$result['faq_error'] = is_wp_error( $faq ) ? $faq->get_error_message() : 'Unknown error';
+			}
+		} else {
+			$result['faq'] = 'skipped_no_dfs';
+		}
+
+		return new WP_REST_Response( array( 'success' => true, 'result' => $result ), 200 );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// BULK START OVER (clear + regenerate all)
+	// ══════════════════════════════════════════════════════════════════════════
+
+	public static function startover_bulk_start( $request ) {
+		$resume = (bool) $request->get_param( 'resume' );
+
+		// Resume: pick up existing queue if one exists.
+		if ( $resume ) {
+			$queue = (array) get_option( RR_SO_QUEUE, array() );
+			if ( ! empty( $queue ) ) {
+				$done  = (int) get_option( RR_SO_DONE, 0 );
+				$total = (int) get_option( RR_SO_TOTAL, 0 );
+				update_option( RR_SO_RUNNING, true, false );
+				return new WP_REST_Response( array(
+					'total'   => $total,
+					'done'    => $done,
+					'running' => true,
+					'resumed' => true,
+				), 200 );
+			}
+			// No queue to resume — fall through to error or start fresh.
+			return new WP_Error( 'rr_nothing_to_resume', __( 'No pending start-over queue found. Start a new operation instead.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		if ( get_option( RR_SO_RUNNING ) ) {
+			return new WP_Error( 'rr_already_running', __( 'A start-over operation is already running. Stop it first.', 'rankready' ), array( 'status' => 409 ) );
+		}
+
+		if ( empty( get_option( RR_OPT_KEY ) ) ) {
+			return new WP_Error( 'rr_no_api_key', __( 'OpenAI API key not configured.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		$raw_types  = (array) $request->get_param( 'post_types' );
+		$allowed    = array_keys( RR_Admin::get_allowed_post_types() );
+		$post_types = array_values( array_intersect( $raw_types, $allowed ) );
+
+		if ( empty( $post_types ) ) {
+			return new WP_Error( 'rr_invalid_types', __( 'No valid post types selected.', 'rankready' ), array( 'status' => 400 ) );
+		}
+
+		$ids = get_posts( array(
+			'post_type'      => $post_types,
+			'post_status'    => 'publish',
+			'posts_per_page' => 2000,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		) );
+
+		$total = count( $ids );
+
+		update_option( RR_SO_QUEUE,   $ids,   false );
+		update_option( RR_SO_TOTAL,   $total, false );
+		update_option( RR_SO_DONE,    0,      false );
+		update_option( RR_SO_RUNNING, true,   false );
+
+		return new WP_REST_Response( array(
+			'total'   => $total,
+			'done'    => 0,
+			'running' => $total > 0,
+		), 200 );
+	}
+
+	public static function startover_bulk_process() {
+		if ( ! get_option( RR_SO_RUNNING ) ) {
+			return new WP_REST_Response( array(
+				'total' => (int) get_option( RR_SO_TOTAL, 0 ),
+				'done'  => (int) get_option( RR_SO_DONE, 0 ),
+				'running' => false,
+			), 200 );
+		}
+
+		$queue = (array) get_option( RR_SO_QUEUE, array() );
+		$done  = (int) get_option( RR_SO_DONE, 0 );
+		$total = (int) get_option( RR_SO_TOTAL, 0 );
+
+		if ( empty( $queue ) ) {
+			update_option( RR_SO_RUNNING, false );
+			return new WP_REST_Response( array( 'total' => $total, 'done' => $done, 'running' => false ), 200 );
+		}
+
+		// Process 1 post at a time (both summary + FAQ are heavy).
+		$post_id = (int) array_shift( $queue );
+		$log     = array();
+		$has_dfs = ! empty( get_option( RR_OPT_DFS_LOGIN ) ) && ! empty( get_option( RR_OPT_DFS_PASSWORD ) );
+
+		if ( $post_id > 0 ) {
+			// Clear all existing data.
+			delete_post_meta( $post_id, RR_META_SUMMARY );
+			delete_post_meta( $post_id, RR_META_HASH );
+			delete_post_meta( $post_id, RR_META_GENERATED );
+			delete_post_meta( $post_id, RR_META_FAQ );
+			delete_post_meta( $post_id, RR_META_FAQ_HASH );
+			delete_post_meta( $post_id, RR_META_FAQ_GENERATED );
+			delete_post_meta( $post_id, RR_META_FAQ_KEYWORD );
+
+			// Regenerate summary.
+			$summary_result = RR_Generator::force_generate( $post_id );
+			$summary_status = ( false !== $summary_result ) ? 'generated' : 'failed';
+
+			// Regenerate FAQ.
+			$faq_status = 'skipped';
+			if ( $has_dfs ) {
+				$faq = RR_Faq::generate_faq( $post_id );
+				$faq_status = ( is_array( $faq ) && ! is_wp_error( $faq ) ) ? 'generated' : 'failed';
+			}
+
+			$done++;
+
+			$post  = get_post( $post_id );
+			$title = $post ? $post->post_title : '#' . $post_id;
+
+			$log[] = array(
+				'id'        => $post_id,
+				'title'     => $title,
+				'edit_link' => get_edit_post_link( $post_id, 'raw' ),
+				'summary'   => $summary_status,
+				'faq'       => $faq_status,
+			);
+		}
+
+		update_option( RR_SO_QUEUE, $queue, false );
+		update_option( RR_SO_DONE,  $done,  false );
+
+		if ( empty( $queue ) ) {
+			update_option( RR_SO_RUNNING, false );
+		}
+
+		return new WP_REST_Response( array(
+			'total'   => $total,
+			'done'    => $done,
+			'running' => ! empty( $queue ),
+			'log'     => $log,
+		), 200 );
+	}
+
+	public static function startover_bulk_stop() {
+		$done  = (int) get_option( RR_SO_DONE, 0 );
+		$total = (int) get_option( RR_SO_TOTAL, 0 );
+		$queue = (array) get_option( RR_SO_QUEUE, array() );
+		$queue_remaining = count( $queue );
+
+		update_option( RR_SO_RUNNING, false, false );
+		// Keep queue intact so Resume can pick it up.
+
+		return new WP_REST_Response( array(
+			'stopped'         => true,
+			'done'            => $done,
+			'total'           => $total,
+			'queue_remaining' => $queue_remaining,
+		), 200 );
+	}
+
 	// ══════════════════════════════════════════════════════════════════════════
 	// BULK SUMMARY ENDPOINTS
 	// ══════════════════════════════════════════════════════════════════════════
 
 	public static function bulk_start( $request ) {
+		$resume = (bool) $request->get_param( 'resume' );
+
+		// Resume: pick up existing queue if one exists.
+		if ( $resume ) {
+			$queue = (array) get_option( RR_BULK_QUEUE, array() );
+			if ( ! empty( $queue ) ) {
+				$done  = (int) get_option( RR_BULK_DONE, 0 );
+				$total = (int) get_option( RR_BULK_TOTAL, 0 );
+				update_option( RR_BULK_RUNNING, true, false );
+				return new WP_REST_Response( array(
+					'total'   => $total,
+					'done'    => $done,
+					'running' => true,
+					'resumed' => true,
+				), 200 );
+			}
+		}
+
 		if ( get_option( RR_BULK_RUNNING ) ) {
 			return new WP_Error( 'rr_already_running', __( 'A bulk operation is already in progress. Stop it first.', 'rankready' ), array( 'status' => 409 ) );
 		}
@@ -276,10 +619,12 @@ class RR_Rest {
 
 		$total = count( $ids );
 
-		update_option( RR_BULK_QUEUE,   $ids,   false );
-		update_option( RR_BULK_TOTAL,   $total, false );
-		update_option( RR_BULK_DONE,    0,      false );
-		update_option( RR_BULK_RUNNING, true,   false );
+		update_option( RR_BULK_QUEUE,      $ids,   false );
+		update_option( RR_BULK_TOTAL,      $total, false );
+		update_option( RR_BULK_DONE,       0,      false );
+		update_option( RR_BULK_RUNNING,    true,   false );
+		update_option( 'rr_bulk_skipped',  0,      false );
+		update_option( 'rr_bulk_failed',   0,      false );
 
 		return new WP_REST_Response( array(
 			'total'   => $total,
@@ -293,39 +638,91 @@ class RR_Rest {
 			return new WP_REST_Response( self::bulk_state(), 200 );
 		}
 
-		$queue = (array) get_option( RR_BULK_QUEUE, array() );
-		$done  = (int) get_option( RR_BULK_DONE, 0 );
-		$total = (int) get_option( RR_BULK_TOTAL, 0 );
+		$queue   = (array) get_option( RR_BULK_QUEUE, array() );
+		$done    = (int) get_option( RR_BULK_DONE, 0 );
+		$total   = (int) get_option( RR_BULK_TOTAL, 0 );
+		$skipped = (int) get_option( 'rr_bulk_skipped', 0 );
+		$failed  = (int) get_option( 'rr_bulk_failed', 0 );
 
 		if ( empty( $queue ) ) {
 			update_option( RR_BULK_RUNNING, false );
-			return new WP_REST_Response( array( 'total' => $total, 'done' => $done, 'running' => false ), 200 );
+			return new WP_REST_Response( array( 'total' => $total, 'done' => $done, 'skipped' => $skipped, 'failed' => $failed, 'running' => false ), 200 );
 		}
 
 		$batch = array_splice( $queue, 0, self::BULK_BATCH );
+		$processed = array();
 
 		foreach ( $batch as $post_id ) {
 			$post_id = (int) $post_id;
 			if ( $post_id < 1 ) {
 				continue;
 			}
-			RR_Generator::force_generate( $post_id );
+
+			$tokens_before = (int) get_post_meta( $post_id, '_rr_tokens_used', true );
+			$result        = RR_Generator::force_generate( $post_id, true );
+			$tokens_after  = (int) get_post_meta( $post_id, '_rr_tokens_used', true );
+			$tokens_used   = $tokens_after - $tokens_before;
 			$done++;
+
+			$post  = get_post( $post_id );
+			$title = $post ? $post->post_title : '#' . $post_id;
+			$link  = get_permalink( $post_id );
+
+			if ( false === $result ) {
+				$failed++;
+				$processed[] = array(
+					'id'     => $post_id,
+					'title'  => $title,
+					'link'   => $link,
+					'status' => 'failed',
+					'tokens' => 0,
+				);
+			} else {
+				$existing = (string) get_post_meta( $post_id, RR_META_SUMMARY, true );
+				if ( $result === $existing && 0 === $tokens_used ) {
+					$skipped++;
+					$processed[] = array(
+						'id'     => $post_id,
+						'title'  => $title,
+						'link'   => $link,
+						'status' => 'skipped',
+						'tokens' => 0,
+					);
+				} else {
+					$processed[] = array(
+						'id'     => $post_id,
+						'title'  => $title,
+						'link'   => $link,
+						'status' => 'generated',
+						'tokens' => $tokens_used,
+					);
+				}
+			}
 		}
 
-		update_option( RR_BULK_QUEUE, $queue, false );
-		update_option( RR_BULK_DONE,  $done,  false );
+		update_option( RR_BULK_QUEUE,     $queue,   false );
+		update_option( RR_BULK_DONE,      $done,    false );
+		update_option( 'rr_bulk_skipped', $skipped, false );
+		update_option( 'rr_bulk_failed',  $failed,  false );
 
 		$still_running = ! empty( $queue );
 		if ( ! $still_running ) {
 			update_option( RR_BULK_RUNNING, false );
 		}
 
-		return new WP_REST_Response( array( 'total' => $total, 'done' => $done, 'running' => $still_running ), 200 );
+		return new WP_REST_Response( array(
+			'total'     => $total,
+			'done'      => $done,
+			'skipped'   => $skipped,
+			'failed'    => $failed,
+			'running'   => $still_running,
+			'processed' => $processed,
+		), 200 );
 	}
 
 	public static function bulk_stop() {
 		update_option( RR_BULK_RUNNING, false );
+		// Keep queue intact for resume — don't clear it.
 		return new WP_REST_Response( array_merge( array( 'stopped' => true ), self::bulk_state() ), 200 );
 	}
 
@@ -337,7 +734,10 @@ class RR_Rest {
 		return array(
 			'total'   => (int) get_option( RR_BULK_TOTAL, 0 ),
 			'done'    => (int) get_option( RR_BULK_DONE, 0 ),
+			'skipped' => (int) get_option( 'rr_bulk_skipped', 0 ),
+			'failed'  => (int) get_option( 'rr_bulk_failed', 0 ),
 			'running' => (bool) get_option( RR_BULK_RUNNING, false ),
+			'queue_remaining' => count( (array) get_option( RR_BULK_QUEUE, array() ) ),
 		);
 	}
 
@@ -535,6 +935,121 @@ class RR_Rest {
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
+	// API KEY VERIFICATION
+	// ══════════════════════════════════════════════════════════════════════════
+
+	public static function verify_api_key( $request ) {
+		$key = $request->get_param( 'key' );
+
+		if ( empty( $key ) ) {
+			return new WP_REST_Response( array(
+				'valid'   => false,
+				'message' => __( 'No API key provided.', 'rankready' ),
+			), 200 );
+		}
+
+		// If masked key, use stored key.
+		if ( false !== strpos( $key, '••••' ) ) {
+			$key = (string) get_option( RR_OPT_KEY, '' );
+		}
+
+		if ( empty( $key ) ) {
+			return new WP_REST_Response( array(
+				'valid'   => false,
+				'message' => __( 'No API key stored.', 'rankready' ),
+			), 200 );
+		}
+
+		$response = wp_remote_get( 'https://api.openai.com/v1/models', array(
+			'headers' => array( 'Authorization' => 'Bearer ' . $key ),
+			'timeout' => 15,
+		) );
+
+		if ( is_wp_error( $response ) ) {
+			return new WP_REST_Response( array(
+				'valid'   => false,
+				'message' => $response->get_error_message(),
+			), 200 );
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+
+		if ( 200 === $code ) {
+			return new WP_REST_Response( array(
+				'valid'   => true,
+				'message' => __( 'API key is valid and working.', 'rankready' ),
+			), 200 );
+		}
+
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		$err  = isset( $body['error']['message'] ) ? $body['error']['message'] : __( 'Invalid API key.', 'rankready' );
+
+		return new WP_REST_Response( array(
+			'valid'   => false,
+			'message' => $err,
+		), 200 );
+	}
+
+	// ── DataForSEO Key Verification ──────────────────────────────────────────
+
+	public static function verify_dfs_key( $request = null ) {
+		$login    = (string) get_option( RR_OPT_DFS_LOGIN, '' );
+		$password = (string) get_option( RR_OPT_DFS_PASSWORD, '' );
+
+		// Allow passing password from the form for testing before save.
+		if ( $request && $request->get_param( 'password' ) ) {
+			$password = (string) $request->get_param( 'password' );
+		}
+		if ( $request && $request->get_param( 'login' ) ) {
+			$login = (string) $request->get_param( 'login' );
+		}
+
+		if ( empty( $login ) || empty( $password ) ) {
+			return new WP_REST_Response( array(
+				'valid'   => false,
+				'message' => __( 'DataForSEO login or password not configured.', 'rankready' ),
+			), 200 );
+		}
+
+		// Use a lightweight endpoint to test credentials.
+		$response = wp_remote_get( 'https://api.dataforseo.com/v3/appendix/user_data', array(
+			'headers' => array(
+				'Authorization' => 'Basic ' . base64_encode( $login . ':' . $password ),
+			),
+			'timeout' => 15,
+		) );
+
+		if ( is_wp_error( $response ) ) {
+			return new WP_REST_Response( array(
+				'valid'   => false,
+				'message' => $response->get_error_message(),
+			), 200 );
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 === $code && isset( $body['tasks'][0]['result'][0]['money'] ) ) {
+			$balance = $body['tasks'][0]['result'][0]['money']['balance'];
+
+			// Auto-save verified credentials to DB.
+			update_option( RR_OPT_DFS_LOGIN, $login );
+			update_option( RR_OPT_DFS_PASSWORD, $password );
+
+			return new WP_REST_Response( array(
+				'valid'   => true,
+				'message' => sprintf( __( 'Credentials valid and saved. Balance: $%s', 'rankready' ), number_format( (float) $balance, 2 ) ),
+			), 200 );
+		}
+
+		$err = isset( $body['status_message'] ) ? $body['status_message'] : __( 'Invalid credentials.', 'rankready' );
+		return new WP_REST_Response( array(
+			'valid'   => false,
+			'message' => $err,
+		), 200 );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
 	// FAQ ENDPOINTS
 	// ══════════════════════════════════════════════════════════════════════════
 
@@ -542,6 +1057,17 @@ class RR_Rest {
 		$post_id = (int) $request->get_param( 'id' );
 		$keyword = sanitize_text_field( $request->get_param( 'keyword' ) );
 		$count   = (int) $request->get_param( 'count' );
+
+		// Cooldown: prevent rapid-fire FAQ generation for the same post.
+		$last  = (int) get_post_meta( $post_id, RR_META_FAQ_GENERATED, true );
+		$since = time() - $last;
+		if ( $last && $since < self::REGEN_COOLDOWN ) {
+			return new WP_Error(
+				'rr_rate_limited',
+				sprintf( __( 'Please wait %d more seconds before regenerating.', 'rankready' ), self::REGEN_COOLDOWN - $since ),
+				array( 'status' => 429 )
+			);
+		}
 
 		$result = RR_Faq::generate_faq( $post_id, $keyword, $count );
 
@@ -605,11 +1131,29 @@ class RR_Rest {
 	// ── FAQ Bulk ──────────────────────────────────────────────────────────────
 
 	public static function faq_bulk_start( $request ) {
+		$resume = (bool) $request->get_param( 'resume' );
+
+		// Resume: pick up existing queue.
+		if ( $resume ) {
+			$queue = (array) get_option( RR_FAQ_QUEUE, array() );
+			if ( ! empty( $queue ) ) {
+				$done  = (int) get_option( RR_FAQ_DONE, 0 );
+				$total = (int) get_option( RR_FAQ_TOTAL, 0 );
+				update_option( RR_FAQ_RUNNING, true, false );
+				return new WP_REST_Response( array(
+					'running' => true,
+					'done'    => $done,
+					'total'   => $total,
+					'resumed' => true,
+				), 200 );
+			}
+		}
+
 		if ( get_option( RR_FAQ_RUNNING ) ) {
 			return new WP_Error( 'rr_faq_running', __( 'FAQ generation already running.', 'rankready' ), array( 'status' => 409 ) );
 		}
 
-		$types         = $request->get_param( 'post_types' );
+		$types         = (array) $request->get_param( 'post_types' );
 		$skip_existing = (bool) $request->get_param( 'skip_existing' );
 		$allowed       = array_keys( RR_Admin::get_allowed_post_types() );
 		$types         = array_values( array_intersect( $types, $allowed ) );
@@ -647,10 +1191,12 @@ class RR_Rest {
 			), 200 );
 		}
 
-		update_option( RR_FAQ_QUEUE, $ids );
-		update_option( RR_FAQ_TOTAL, count( $ids ) );
-		update_option( RR_FAQ_DONE, 0 );
-		update_option( RR_FAQ_RUNNING, true );
+		update_option( RR_FAQ_QUEUE,        $ids,          false );
+		update_option( RR_FAQ_TOTAL,        count( $ids ), false );
+		update_option( RR_FAQ_DONE,         0,             false );
+		update_option( RR_FAQ_RUNNING,      true,          false );
+		update_option( 'rr_faq_skipped',    0,             false );
+		update_option( 'rr_faq_failed',     0,             false );
 
 		return new WP_REST_Response( array(
 			'running' => true,
@@ -665,22 +1211,85 @@ class RR_Rest {
 				'running' => false,
 				'done'    => (int) get_option( RR_FAQ_DONE, 0 ),
 				'total'   => (int) get_option( RR_FAQ_TOTAL, 0 ),
+				'skipped' => (int) get_option( 'rr_faq_skipped', 0 ),
+				'failed'  => (int) get_option( 'rr_faq_failed', 0 ),
 			), 200 );
 		}
 
-		$queue = (array) get_option( RR_FAQ_QUEUE, array() );
-		$done  = (int) get_option( RR_FAQ_DONE, 0 );
-		$total = (int) get_option( RR_FAQ_TOTAL, 0 );
+		$queue   = (array) get_option( RR_FAQ_QUEUE, array() );
+		$done    = (int) get_option( RR_FAQ_DONE, 0 );
+		$total   = (int) get_option( RR_FAQ_TOTAL, 0 );
+		$skipped = (int) get_option( 'rr_faq_skipped', 0 );
+		$failed  = (int) get_option( 'rr_faq_failed', 0 );
 
 		// Process 1 post per batch (API rate limits).
-		if ( ! empty( $queue ) ) {
-			$post_id = array_shift( $queue );
-			update_option( RR_FAQ_QUEUE, $queue );
+		$processed = array();
 
-			$result = RR_Faq::generate_faq( (int) $post_id );
+		if ( ! empty( $queue ) ) {
+			$post_id = (int) array_shift( $queue );
+			update_option( RR_FAQ_QUEUE, $queue, false );
+
+			$post  = get_post( $post_id );
+			$title = $post ? $post->post_title : '#' . $post_id;
+			$link  = get_permalink( $post_id );
+
+			if ( $post ) {
+				$content  = wp_strip_all_tags( do_shortcode( $post->post_content ) );
+				$keyword  = RR_Faq::get_focus_keyword( $post_id );
+				$count    = (int) get_option( RR_OPT_FAQ_COUNT, 5 );
+				$new_hash = md5( $content . $keyword . $count );
+				$old_hash = (string) get_post_meta( $post_id, RR_META_FAQ_HASH, true );
+				$existing = get_post_meta( $post_id, RR_META_FAQ, true );
+
+				if ( $new_hash === $old_hash && ! empty( $existing ) ) {
+					$skipped++;
+					$processed[] = array(
+						'id'     => $post_id,
+						'title'  => $title,
+						'link'   => $link,
+						'status' => 'skipped',
+						'tokens' => 0,
+					);
+				} else {
+					$tokens_before = (int) get_post_meta( $post_id, '_rr_tokens_used', true );
+					$result        = RR_Faq::generate_faq( $post_id );
+					$tokens_after  = (int) get_post_meta( $post_id, '_rr_tokens_used', true );
+					$tokens_used   = $tokens_after - $tokens_before;
+
+					if ( is_wp_error( $result ) ) {
+						$failed++;
+						$processed[] = array(
+							'id'     => $post_id,
+							'title'  => $title,
+							'link'   => $link,
+							'status' => 'failed',
+							'tokens' => 0,
+						);
+					} else {
+						$processed[] = array(
+							'id'     => $post_id,
+							'title'  => $title,
+							'link'   => $link,
+							'status' => 'generated',
+							'tokens' => $tokens_used,
+						);
+					}
+				}
+			} else {
+				$failed++;
+				$processed[] = array(
+					'id'     => $post_id,
+					'title'  => $title,
+					'link'   => $link,
+					'status' => 'failed',
+					'tokens' => 0,
+				);
+			}
 
 			$done++;
-			update_option( RR_FAQ_DONE, $done );
+			update_option( RR_FAQ_DONE,      $done,    false );
+			update_option( 'rr_faq_skipped', $skipped, false );
+			update_option( 'rr_faq_failed',  $failed,  false );
 		}
 
 		$still_running = ! empty( $queue );
@@ -689,21 +1298,399 @@ class RR_Rest {
 		}
 
 		return new WP_REST_Response( array(
-			'running' => $still_running,
-			'done'    => $done,
-			'total'   => $total,
+			'running'   => $still_running,
+			'done'      => $done,
+			'total'     => $total,
+			'skipped'   => $skipped,
+			'failed'    => $failed,
+			'processed' => $processed,
 		), 200 );
 	}
 
 	public static function faq_bulk_stop() {
 		update_option( RR_FAQ_RUNNING, false );
-		update_option( RR_FAQ_QUEUE, array() );
+		// Keep queue intact for resume.
 
 		return new WP_REST_Response( array(
-			'running' => false,
-			'done'    => (int) get_option( RR_FAQ_DONE, 0 ),
-			'total'   => (int) get_option( RR_FAQ_TOTAL, 0 ),
+			'running'         => false,
+			'done'            => (int) get_option( RR_FAQ_DONE, 0 ),
+			'total'           => (int) get_option( RR_FAQ_TOTAL, 0 ),
+			'skipped'         => (int) get_option( 'rr_faq_skipped', 0 ),
+			'failed'          => (int) get_option( 'rr_faq_failed', 0 ),
+			'queue_remaining' => count( (array) get_option( RR_FAQ_QUEUE, array() ) ),
 		), 200 );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// FAQ POSTS LIST
+	// ══════════════════════════════════════════════════════════════════════════
+
+	public static function faq_posts_list() {
+		global $wpdb;
+
+		$results = $wpdb->get_results( $wpdb->prepare(
+			"SELECT p.ID, p.post_title, p.post_type, pm2.meta_value AS faq_generated
+			 FROM {$wpdb->posts} p
+			 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = %s AND pm.meta_value != ''
+			 LEFT JOIN {$wpdb->postmeta} pm2 ON pm2.post_id = p.ID AND pm2.meta_key = %s
+			 WHERE p.post_status = 'publish'
+			 ORDER BY pm2.meta_value DESC
+			 LIMIT 200",
+			RR_META_FAQ,
+			RR_META_FAQ_GENERATED
+		) );
+
+		$posts = array();
+		foreach ( $results as $row ) {
+			$generated = ! empty( $row->faq_generated ) ? wp_date( get_option( 'date_format' ), (int) $row->faq_generated ) : '';
+			$posts[]   = array(
+				'id'        => (int) $row->ID,
+				'title'     => $row->post_title,
+				'type'      => $row->post_type,
+				'generated' => $generated,
+				'edit_url'  => get_edit_post_link( $row->ID, 'raw' ),
+				'view_url'  => get_permalink( $row->ID ),
+			);
+		}
+
+		return new WP_REST_Response( array(
+			'posts' => $posts,
+			'total' => count( $posts ),
+		), 200 );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// ERROR LOG ENDPOINTS
+	// ══════════════════════════════════════════════════════════════════════════
+
+	public static function get_errors() {
+		$log = RR_Generator::get_error_log();
+		// Reverse so newest first.
+		$log = array_reverse( $log );
+
+		// Add human-readable time.
+		foreach ( $log as &$entry ) {
+			$entry['time_ago'] = human_time_diff( $entry['time'] ) . ' ago';
+			$entry['date']     = wp_date( 'Y-m-d H:i:s', $entry['time'] );
+		}
+		unset( $entry );
+
+		return new WP_REST_Response( array( 'errors' => $log ), 200 );
+	}
+
+	public static function clear_errors() {
+		RR_Generator::clear_error_log();
+		return new WP_REST_Response( array( 'success' => true ), 200 );
+	}
+
+	// ── Token Usage per post ─────────────────────────────────────────────────
+
+	public static function get_token_usage() {
+		global $wpdb;
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT pm.post_id, pm.meta_value AS tokens, p.post_title, p.post_type
+			 FROM {$wpdb->postmeta} pm
+			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			 WHERE pm.meta_key = %s AND pm.meta_value > 0
+			 ORDER BY CAST(pm.meta_value AS UNSIGNED) DESC
+			 LIMIT 100",
+			'_rr_tokens_used'
+		) );
+
+		$posts = array();
+		foreach ( $rows as $row ) {
+			$posts[] = array(
+				'id'     => (int) $row->post_id,
+				'title'  => $row->post_title,
+				'type'   => $row->post_type,
+				'tokens' => (int) $row->tokens,
+				'link'   => get_permalink( (int) $row->post_id ),
+				'edit'   => get_edit_post_link( (int) $row->post_id, 'raw' ),
+			);
+		}
+
+		$totals = (array) get_option( 'rr_token_usage', array() );
+
+		return new WP_REST_Response( array(
+			'posts'          => $posts,
+			'summary_tokens' => isset( $totals['summary_tokens'] ) ? (int) $totals['summary_tokens'] : 0,
+			'faq_tokens'     => isset( $totals['faq_tokens'] ) ? (int) $totals['faq_tokens'] : 0,
+			'total_calls'    => isset( $totals['total_calls'] ) ? (int) $totals['total_calls'] : 0,
+		), 200 );
+	}
+
+	// ── Content Freshness Alerts ─────────────────────────────────────────────
+
+	public static function content_freshness( $request ) {
+		$days        = max( 30, (int) $request->get_param( 'days' ) );
+		$cutoff_date = gmdate( 'Y-m-d H:i:s', strtotime( "-{$days} days" ) );
+
+		// Get post types that have summaries or FAQs enabled.
+		$summary_types = (array) get_option( RR_OPT_POST_TYPES, array( 'post' ) );
+		$faq_types     = (array) get_option( RR_OPT_FAQ_POST_TYPES, array( 'post' ) );
+		$all_types     = array_unique( array_merge( $summary_types, $faq_types ) );
+
+		if ( empty( $all_types ) ) {
+			return new WP_REST_Response( array( 'stale' => array(), 'summary' => array() ), 200 );
+		}
+
+		$posts = get_posts( array(
+			'post_type'      => $all_types,
+			'post_status'    => 'publish',
+			'date_query'     => array(
+				array( 'column' => 'post_modified', 'before' => $cutoff_date ),
+			),
+			'orderby'        => 'modified',
+			'order'          => 'ASC',
+			'posts_per_page' => 50,
+			'fields'         => 'ids',
+		) );
+
+		$stale = array();
+		foreach ( $posts as $pid ) {
+			$post       = get_post( $pid );
+			$modified   = strtotime( $post->post_modified );
+			$days_ago   = (int) floor( ( time() - $modified ) / DAY_IN_SECONDS );
+			$has_summary = ! empty( get_post_meta( $pid, RR_META_SUMMARY, true ) );
+			$has_faq     = ! empty( get_post_meta( $pid, RR_META_FAQ, true ) );
+
+			$urgency = 'moderate';
+			if ( $days_ago > 365 ) {
+				$urgency = 'critical';
+			} elseif ( $days_ago > 180 ) {
+				$urgency = 'high';
+			}
+
+			$stale[] = array(
+				'id'          => $pid,
+				'title'       => get_the_title( $pid ),
+				'type'        => $post->post_type,
+				'modified'    => $post->post_modified,
+				'days_ago'    => $days_ago,
+				'urgency'     => $urgency,
+				'has_summary' => $has_summary,
+				'has_faq'     => $has_faq,
+				'edit_url'    => get_edit_post_link( $pid, 'raw' ),
+				'view_url'    => get_permalink( $pid ),
+			);
+		}
+
+		// Summary stats.
+		global $wpdb;
+		$type_placeholders = implode( ',', array_fill( 0, count( $all_types ), '%s' ) );
+		$total_published   = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ({$type_placeholders}) AND post_status = %s",
+			array_merge( $all_types, array( 'publish' ) )
+		) );
+		$total_stale = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ({$type_placeholders}) AND post_status = %s AND post_modified < %s",
+			array_merge( $all_types, array( 'publish', $cutoff_date ) )
+		) );
+
+		return new WP_REST_Response( array(
+			'stale'   => $stale,
+			'summary' => array(
+				'total_published' => $total_published,
+				'total_stale'     => $total_stale,
+				'threshold_days'  => $days,
+				'fresh_pct'       => $total_published > 0 ? round( ( ( $total_published - $total_stale ) / $total_published ) * 100, 1 ) : 100,
+			),
+		), 200 );
+	}
+
+	// ── Health Check Diagnostic ──────────────────────────────────────────────
+
+	public static function health_check() {
+		$checks = array();
+
+		// 1. OpenAI API Key.
+		$api_key = get_option( RR_OPT_KEY, '' );
+		$checks[] = array(
+			'label'  => 'OpenAI API Key',
+			'status' => ! empty( $api_key ) ? 'pass' : 'fail',
+			'detail' => ! empty( $api_key ) ? 'Configured.' : 'Not set — summaries and FAQ answers will not generate.',
+		);
+
+		// 2. DataForSEO credentials.
+		$dfs_login = get_option( RR_OPT_DFS_LOGIN, '' );
+		$dfs_pass  = get_option( RR_OPT_DFS_PASSWORD, '' );
+		$dfs_ok    = ! empty( $dfs_login ) && ! empty( $dfs_pass );
+		$checks[] = array(
+			'label'  => 'DataForSEO Credentials',
+			'status' => $dfs_ok ? 'pass' : 'warn',
+			'detail' => $dfs_ok ? 'Login and password configured.' : 'Not set — FAQ question discovery will not work.',
+		);
+
+		// 3. LLMs.txt enabled.
+		$llms_on = 'on' === get_option( RR_OPT_LLMS_ENABLE, 'off' );
+		$checks[] = array(
+			'label'  => 'LLMs.txt',
+			'status' => $llms_on ? 'pass' : 'warn',
+			'detail' => $llms_on ? 'Enabled — serving /llms.txt' : 'Disabled.',
+		);
+
+		// 4. Markdown endpoints.
+		$md_on = 'on' === get_option( RR_OPT_MD_ENABLE, 'off' );
+		$checks[] = array(
+			'label'  => 'Markdown Endpoints',
+			'status' => $md_on ? 'pass' : 'warn',
+			'detail' => $md_on ? 'Enabled — .md endpoints active.' : 'Disabled.',
+		);
+
+		// 5. Robots.txt LLM crawlers.
+		$robots_on = 'on' === get_option( RR_OPT_ROBOTS_ENABLE, 'off' );
+		$crawlers  = (array) get_option( RR_OPT_ROBOTS_CRAWLERS, array() );
+		$checks[] = array(
+			'label'  => 'LLM Crawler Access (robots.txt)',
+			'status' => $robots_on ? 'pass' : 'warn',
+			'detail' => $robots_on ? count( $crawlers ) . ' crawlers allowed.' : 'Disabled — no crawler rules in robots.txt.',
+		);
+
+		// 6. SEO plugin detected.
+		$seo_plugin = 'None detected';
+		if ( defined( 'RANK_MATH_VERSION' ) ) {
+			$seo_plugin = 'Rank Math ' . RANK_MATH_VERSION;
+		} elseif ( defined( 'WPSEO_VERSION' ) ) {
+			$seo_plugin = 'Yoast SEO ' . WPSEO_VERSION;
+		} elseif ( defined( 'AIOSEO_VERSION' ) ) {
+			$seo_plugin = 'All in One SEO ' . AIOSEO_VERSION;
+		} elseif ( defined( 'SEOPRESS_VERSION' ) ) {
+			$seo_plugin = 'SEOPress ' . SEOPRESS_VERSION;
+		} elseif ( defined( 'THE_SEO_FRAMEWORK_VERSION' ) ) {
+			$seo_plugin = 'The SEO Framework ' . THE_SEO_FRAMEWORK_VERSION;
+		}
+		$checks[] = array(
+			'label'  => 'SEO Plugin',
+			'status' => 'None detected' !== $seo_plugin ? 'pass' : 'info',
+			'detail' => $seo_plugin . ( 'None detected' !== $seo_plugin ? ' — schema merging active.' : ' — RankReady will output standalone Article schema.' ),
+		);
+
+		// 7. Auto-generate setting.
+		$auto_gen = 'on' === get_option( RR_OPT_AUTO_GENERATE, 'off' );
+		$checks[] = array(
+			'label'  => 'Auto-Generate on Publish',
+			'status' => $auto_gen ? 'pass' : 'info',
+			'detail' => $auto_gen ? 'Enabled — summaries auto-generate on publish/update.' : 'Disabled (default) — use manual Regenerate or Bulk.',
+		);
+
+		// 8. Post coverage stats.
+		global $wpdb;
+		$public_types = array_values( get_post_types( array( 'public' => true ), 'names' ) );
+		$public_types = array_diff( $public_types, array( 'attachment' ) );
+
+		if ( ! empty( $public_types ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $public_types ), '%s' ) );
+
+			$total_posts = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ({$placeholders})",
+					...$public_types
+				)
+			);
+
+			$with_summary = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(DISTINCT pm.post_id) FROM {$wpdb->postmeta} pm
+					 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id AND p.post_status = 'publish' AND p.post_type IN ({$placeholders})
+					 WHERE pm.meta_key = %s AND pm.meta_value != ''",
+					...array_merge( $public_types, array( RR_META_SUMMARY ) )
+				)
+			);
+
+			$with_faq = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(DISTINCT pm.post_id) FROM {$wpdb->postmeta} pm
+					 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id AND p.post_status = 'publish' AND p.post_type IN ({$placeholders})
+					 WHERE pm.meta_key = %s AND pm.meta_value != '' AND pm.meta_value != 'a:0:{}'",
+					...array_merge( $public_types, array( RR_META_FAQ ) )
+				)
+			);
+		} else {
+			$total_posts  = 0;
+			$with_summary = 0;
+			$with_faq     = 0;
+		}
+
+		$summary_pct = $total_posts > 0 ? round( ( $with_summary / $total_posts ) * 100 ) : 0;
+		$faq_pct     = $total_posts > 0 ? round( ( $with_faq / $total_posts ) * 100 ) : 0;
+
+		$checks[] = array(
+			'label'  => 'Key Takeaways Coverage',
+			'status' => $summary_pct >= 80 ? 'pass' : ( $summary_pct >= 30 ? 'warn' : 'fail' ),
+			'detail' => $with_summary . ' / ' . $total_posts . ' posts (' . $summary_pct . '%)',
+		);
+
+		$checks[] = array(
+			'label'  => 'FAQ Coverage',
+			'status' => $faq_pct >= 80 ? 'pass' : ( $faq_pct >= 30 ? 'warn' : ( $dfs_ok ? 'fail' : 'info' ) ),
+			'detail' => $with_faq . ' / ' . $total_posts . ' posts (' . $faq_pct . '%)',
+		);
+
+		// 9. Auto-display settings.
+		$summary_display = 'on' === get_option( RR_OPT_AUTO_DISPLAY, 'off' );
+		$faq_display     = 'on' === get_option( RR_OPT_FAQ_AUTO_DISPLAY, 'off' );
+		$checks[] = array(
+			'label'  => 'Auto-Display (Key Takeaways)',
+			'status' => $summary_display ? 'pass' : 'info',
+			'detail' => $summary_display ? 'Enabled — position: ' . get_option( RR_OPT_DISPLAY_POSITION, 'before' ) . ' content.' : 'Disabled — use block or widget.',
+		);
+		$checks[] = array(
+			'label'  => 'Auto-Display (FAQ)',
+			'status' => $faq_display ? 'pass' : 'info',
+			'detail' => $faq_display ? 'Enabled — position: ' . get_option( RR_OPT_FAQ_POSITION, 'after' ) . ' content.' : 'Disabled — use block or widget.',
+		);
+
+		// 10. Rewrite rules check.
+		$rules = get_option( 'rewrite_rules', array() );
+		$has_md_rule   = false;
+		$has_llms_rule = false;
+		if ( is_array( $rules ) ) {
+			foreach ( $rules as $pattern => $query ) {
+				if ( false !== strpos( $pattern, '.md' ) ) {
+					$has_md_rule = true;
+				}
+				if ( false !== strpos( $query, 'llms_txt' ) || false !== strpos( $pattern, 'llms' ) ) {
+					$has_llms_rule = true;
+				}
+			}
+		}
+		if ( $md_on || $llms_on ) {
+			$rewrite_ok = ( ! $md_on || $has_md_rule ) && ( ! $llms_on || $has_llms_rule );
+			$checks[] = array(
+				'label'  => 'Rewrite Rules',
+				'status' => $rewrite_ok ? 'pass' : 'fail',
+				'detail' => $rewrite_ok ? 'All required rewrite rules found.' : 'Missing rewrite rules — try deactivating and reactivating the plugin, or visit Settings > Permalinks.',
+			);
+		}
+
+		// 11. Error log count.
+		$errors = (array) get_option( 'rr_error_log', array() );
+		$recent_errors = 0;
+		$one_day_ago   = time() - DAY_IN_SECONDS;
+		foreach ( $errors as $err ) {
+			if ( isset( $err['time'] ) && $err['time'] > $one_day_ago ) {
+				$recent_errors++;
+			}
+		}
+		$checks[] = array(
+			'label'  => 'Recent Errors (24h)',
+			'status' => 0 === $recent_errors ? 'pass' : ( $recent_errors <= 5 ? 'warn' : 'fail' ),
+			'detail' => $recent_errors . ' error' . ( 1 !== $recent_errors ? 's' : '' ) . ' in the last 24 hours.' . ( $recent_errors > 0 ? ' Check Error Log for details.' : '' ),
+		);
+
+		// 12. DataForSEO usage.
+		$dfs_usage = (array) get_option( 'rr_dfs_usage', array() );
+		$dfs_calls = isset( $dfs_usage['total_calls'] ) ? (int) $dfs_usage['total_calls'] : 0;
+		if ( $dfs_ok ) {
+			$checks[] = array(
+				'label'  => 'DataForSEO API Calls',
+				'status' => 'info',
+				'detail' => $dfs_calls . ' total API calls tracked.',
+			);
+		}
+
+		return new WP_REST_Response( array( 'checks' => $checks ), 200 );
 	}
 
 	// ── Common arg schemas ────────────────────────────────────────────────────

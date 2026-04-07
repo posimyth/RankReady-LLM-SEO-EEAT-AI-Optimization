@@ -1,245 +1,176 @@
-# RankReady - LLM SEO, EEAT & AI Optimization
+# RankReady – LLM SEO, EEAT & AI Optimization
 
-**Make your WordPress site visible to AI search engines, LLM crawlers, and Google AI Overviews.**
+**The WordPress plugin that gets your content cited by AI.**
 
-RankReady is the only WordPress plugin that combines all six pillars of LLM SEO into a single, lightweight package: LLMs.txt, Markdown endpoints, AI crawler management, AI-generated summaries, Speakable schema, and E-E-A-T author optimization.
+RankReady is the most complete WordPress plugin for AI search optimization. It combines all pillars of LLM SEO into a single, lightweight package: AI-generated content, schema markup for AI citations, LLMs.txt, Markdown endpoints, AI crawler management, content freshness monitoring, and E-E-A-T author optimization.
 
 [![WordPress](https://img.shields.io/badge/WordPress-6.2%2B-blue.svg)](https://wordpress.org)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)](https://php.net)
 [![License](https://img.shields.io/badge/License-GPL--2.0--or--later-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
-[![Version](https://img.shields.io/badge/Version-2.4.5-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization)
+[![Version](https://img.shields.io/badge/Version-1.2-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization)
 
 ---
 
-## The Problem
+## Why RankReady Exists
 
-AI search is replacing traditional search. ChatGPT, Perplexity, Google AI Overviews, and Claude are now how people find information. But most WordPress sites are invisible to these AI engines because:
+AI search is replacing traditional search. ChatGPT, Perplexity, Google AI Overviews, and Claude are now how people find information. But most WordPress sites are invisible to these AI engines.
 
-- AI crawlers can't efficiently parse bloated HTML (page builders, scripts, ads, nav menus)
-- There's no structured way for LLMs to understand what your site is about
-- robots.txt doesn't distinguish between training bots and search/retrieval bots
-- Schema markup is missing or incomplete for AI citation
-- No content is optimized for how LLMs actually consume information
+**The research is clear:**
+- 81% of AI-cited pages include schema markup (AccuraCast 2025)
+- Pages with FAQPage schema are 3.2x more likely to appear in AI Overviews
+- 65% of AI citations target content updated within the past year
+- 44% of citations come from the top third of the page
+- ChatGPT search results correlate 87% with Bing's top 10
+- AI agent traffic grew 6,900% year-over-year in 2025
+- Incomplete schema causes an 18% citation penalty vs. no schema at all
 
-**The data is clear:**
-- 65% of pages cited by Google AI Mode include structured data
-- Pages with proper schema get cited 3.1x more frequently in AI Overviews
-- Markdown uses 80% fewer tokens than HTML for the same content
-- 95% of ChatGPT citations come from content updated within 10 months
+RankReady handles all of this automatically.
 
-RankReady solves all of this.
+---
+
+## What Makes RankReady Different
+
+No other WordPress plugin combines all of these:
+
+| Capability | RankReady | Rank Math | Yoast | AIOSEO | LLMagnet | LovedByAI |
+|-----------|-----------|-----------|-------|--------|----------|-----------|
+| AI Summary Generation (OpenAI) | Yes | No | No | No | No | No |
+| FAQ Generator with Brand Injection | Yes | No | No | No | No | No |
+| FAQPage JSON-LD Schema | Yes | Block only | Block only | Block only | No | No |
+| Article Schema + Speakable | Yes | Partial | Partial | Partial | No | No |
+| LLMs.txt + llms-full.txt | Yes | Basic | Basic | Basic | Yes | No |
+| Markdown Endpoints (.md) | Yes | No | No | No | No | No |
+| Per-Crawler Robots.txt (31 bots) | Yes | No | 3 bots | No | No | No |
+| Content Freshness Alerts | Yes | No | No | No | No | No |
+| Bulk Author Changer (EEAT) | Yes | No | No | No | No | No |
+| Content Negotiation (Accept header) | Yes | No | No | No | No | No |
+| DataForSEO + OpenAI Usage Tracking | Yes | N/A | N/A | N/A | No | No |
+| Health Check Diagnostic | Yes | No | No | No | No | No |
 
 ---
 
 ## Features
 
-### 1. LLMs.txt Generator
+### 1. FAQ Generator with Brand Entity Injection
 
-Serves `/llms.txt` and `/llms-full.txt` following the [llmstxt.org specification](https://llmstxt.org/) — the same standard used by Anthropic, Cloudflare, Stripe, and Vercel.
+Auto-generates SEO-optimized FAQ Q&A pairs using a two-stage pipeline:
 
-**What it does:**
-- Generates a structured index of your site for AI models to understand your content at a glance
-- `/llms.txt` — Links and descriptions (token-efficient index)
-- `/llms-full.txt` — Full content inlined as clean markdown (comprehensive context)
-- Respects noindex from Rank Math, Yoast, AIOSEO, and SEOPress
-- Taxonomy controls: exclude specific categories and tags
-- Smart conflict detection: skips generation if another SEO plugin already handles it
-- Transient caching with configurable TTL
-- Auto-busts cache when posts are published, updated, or deleted
-
-**Why it matters:** Over 844,000 sites now have llms.txt. It's the equivalent of sitemap.xml for AI — a structured entry point that tells AI models what your site contains without them having to crawl every page.
-
----
-
-### 2. Markdown Endpoints
-
-Every post and page available as clean Markdown at its URL + `.md`.
-
-```
-https://example.com/my-blog-post/     -> HTML (normal)
-https://example.com/my-blog-post.md   -> Clean Markdown
-```
-
-**What it does:**
-- YAML frontmatter with title, date, author, description, categories, tags, word count, featured image
-- Aggressively strips Elementor, Divi, WPBakery, Beaver Builder wrapper markup
-- Content negotiation via `Accept: text/markdown` header (like Cloudflare's paid feature)
-- Auto-discovery via `<link rel="alternate" type="text/markdown">` in HTML head
-- `Link` HTTP header for crawler discovery
-- Canonical `Link` header on `.md` responses pointing back to HTML
-- `Vary: Accept` header for proper CDN behavior
-- Visible "View as Markdown" link at bottom of content
-- Scoped rewrite rules: excludes wp-admin, wp-content, wp-includes, wp-json
-
-**Why it matters:** Markdown is the native language of LLMs. HTML bloat (nav, footer, scripts, ads) wastes context window tokens. A simple heading costs ~3 tokens in Markdown vs 12-15 tokens in HTML. Cloudflare charges for this at the infrastructure level (Pro+ plans). RankReady gives it to every WordPress site for free.
-
-**Developer filters:**
-```php
-// Disable the visible "View as Markdown" link
-add_filter( 'rankready_show_md_link', '__return_false' );
-```
-
----
-
-### 3. LLM Crawler Access (robots.txt)
-
-Per-crawler toggles for 22 AI bots with automatic robots.txt management.
-
-**Supported crawlers:**
-
-| Company | Training Bots | Search/Retrieval Bots |
-|---------|--------------|----------------------|
-| OpenAI | GPTBot | OAI-SearchBot, ChatGPT-User |
-| Anthropic | anthropic-ai | ClaudeBot, Claude-Web |
-| Google | Google-Extended | — |
-| Perplexity | — | PerplexityBot |
-| Apple | — | Applebot-Extended |
-| Meta | Meta-ExternalAgent, Meta-ExternalFetcher | — |
-| Others | CCBot, Bytespider, Diffbot, ImagesiftBot, Omgili, Timpibot | cohere-ai, YouBot, PetalBot |
-
-**What it does:**
-- Enable/disable toggle for the entire robots.txt block
-- Individual checkboxes for each of the 22 crawlers
-- Select/Deselect All with one click
-- Stacked `User-agent` lines in a single block (per RFC 9309 spec)
-- Global `Allow` directives for `/llms.txt`, `/llms-full.txt`, `/*.md$`
-- Append-only: never modifies existing Rank Math, Yoast, or other plugin rules
-- Smart deduplication: skips crawlers already defined by other plugins
-- Physical robots.txt support: detects and writes directly when WordPress filter doesn't fire
-- Auto-sync on settings change
-- Clean removal on deactivation
-
-**Why it matters:** The industry consensus is "block training bots, allow retrieval bots." But most plugins offer blanket allow/block with no granularity. RankReady lets site owners make per-crawler decisions — block GPTBot (training) while allowing OAI-SearchBot (search results). This is the difference between protecting your IP and being invisible in AI search.
-
----
-
-### 4. AI Summary (Key Takeaways)
-
-Auto-generates bullet-point summaries on publish/update via OpenAI.
-
-**What it does:**
-- Generates concise key takeaways from post content using OpenAI API
-- Content-hash caching: only regenerates when content actually changes (no API waste)
-- Custom prompt support for controlling summary style
-- Per-post disable toggle
-- Summaries included in Markdown endpoints and Gutenberg block output
-- Bulk regenerate with progress bar for existing content
-- Supports GPT-4o, GPT-4o-mini, and other OpenAI models
-
-**Why it matters:** LLMs prefer structured, bullet-point information. Sites with clear key takeaways are easier for AI to cite accurately. The content-hash approach means you never waste API calls on unchanged content.
-
----
-
-### 5. Article JSON-LD Schema with Speakable
-
-Automatic Article schema injection with Speakable markup.
-
-**What it does:**
-- Injects complete `Article` / `BlogPosting` JSON-LD schema
-- Speakable markup for voice-query optimization
-- Includes: headline, datePublished, dateModified, author (with URL), publisher, image, description
-- Works alongside Rank Math, Yoast, AIOSEO, SEOPress (doesn't duplicate)
-- Checks enabled post types before injecting
-- Schema only injected on singular views
+1. **DataForSEO** discovers real search questions (keyword suggestions + related keywords)
+2. **OpenAI** generates answers using your actual page content + brand terms
 
 **Why it matters:**
-- 65% of Google AI Mode citations include structured data
-- 71% for ChatGPT
-- Schema-compliant pages get cited 3.1x more frequently
-- Speakable is still in beta at Google but growing as AI assistants handle voice queries
-- Partially-filled or generic schema causes an 18-percentage-point citation penalty vs no schema — RankReady generates complete, accurate schema every time
+- FAQPage schema drives 3.2x more AI Overview appearances than any other schema type
+- Brand entity injection uses semantic triples (Subject-Predicate-Object) to naturally associate your brand with relevant topics
+- Focus keyword auto-detected from Rank Math, Yoast, AIOSEO, or SEOPress
+- Content hash prevents duplicate API calls when content hasn't changed
+- Bulk generation across all post types with resume capability
 
----
+### 2. AI Summary (Key Takeaways)
 
-### 6. Bulk Author Changer
+Generates concise bullet-point summaries from post content via OpenAI on publish/update.
 
-Reassign post authors across any post type with preview and progress tracking.
+- Content-hash caching: only regenerates when content changes
+- Custom prompt support for controlling summary style and tone
+- Included in Markdown endpoints and schema output
+- Bulk regenerate with progress tracking and resume
+- Per-post disable toggle
 
-**What it does:**
-- Select source author (From) and target author (To)
-- Filter by post type, date range
-- Preview count before executing
-- Batch processing with progress bar
-- Race condition guards
-- Unhooks summary generation during bulk operations to prevent cascading API calls
-- Capped at 10,000 posts per operation for memory safety
+### 3. Article JSON-LD Schema with Speakable
 
-**Why it matters:** E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) directly impacts AI citations. Sites with proper author profiles saw 2.6x more traffic. Reassigning posts from generic "admin" accounts to recognized subject-matter experts is one of the highest-impact E-E-A-T signals.
+Complete Article/BlogPosting schema with AI citation optimization:
 
----
+- `headline`, `datePublished`, `dateModified`, `author`, `publisher`, `image`, `description`
+- `speakable` markup for voice-query optimization
+- `about` entities from hierarchical taxonomies (categories) — works with ALL custom post types
+- `mentions` entities from non-hierarchical taxonomies (tags) — works with ALL custom taxonomies
+- `hasPart` with AI summary content
+- Automatic detection: skips when Rank Math, Yoast, or AIOSEO is active (no duplicate schema)
+- FAQPage schema injected separately when FAQ data exists
+- Duplicate detection: skips FAQ schema when Rank Math/Yoast/AIOSEO FAQ blocks exist in content
 
-### 7. Gutenberg Block & Elementor Widget
+### 4. LLMs.txt Generator
 
-Display AI summaries with full design control.
+Serves `/llms.txt` and `/llms-full.txt` per the [llmstxt.org specification](https://llmstxt.org/).
 
-**Gutenberg Block:**
-- Color controls (background, text, border)
-- Border width and radius
-- Padding controls
-- Font size and heading tag selection
-- Show/hide label toggle
-- Live editor preview
+- Structured site index for AI models to understand your content
+- `/llms.txt` — token-efficient links and descriptions
+- `/llms-full.txt` — full content as clean markdown (uses `strip_shortcodes()` for performance)
+- Respects noindex from Rank Math, Yoast, AIOSEO, SEOPress
+- Taxonomy controls: exclude categories and tags
+- Transient caching with configurable TTL
+- Multisite-safe: skips physical robots.txt sync on multisite
 
-**Elementor Widget:**
-- Drag-and-drop AI summary widget
-- Box, label, and bullet style controls
-- Full Elementor style panel integration
+### 5. Markdown Endpoints
 
----
-
-## Why RankReady vs Alternatives
-
-### vs Rank Math / Yoast / AIOSEO
-
-These are traditional SEO plugins. Their LLM features are an afterthought:
-
-| Feature | RankReady | Rank Math | Yoast Premium | AIOSEO |
-|---------|-----------|-----------|---------------|--------|
-| LLMs.txt | Full spec + llms-full.txt | Basic (module) | Basic | Basic |
-| Per-post Markdown endpoints (.md) | 17 files, YAML frontmatter | No | No | No |
-| Per-crawler robots.txt toggles (22 bots) | Yes | No | 3 crawlers only | No |
-| AI Summary auto-generation | OpenAI-powered | No | Key Takeaways block | No |
-| Speakable schema | Yes | No | No | No |
-| Physical robots.txt sync | Yes | Yes | No | No |
-| Content negotiation (Accept: text/markdown) | Yes | No | No | No |
-| Noindex-aware llms.txt | Yes (RM + Yoast + AIOSEO + SEOPress) | Own only | Own only | Own only |
-
-### vs Cloudflare Markdown for Agents
-
-Cloudflare offers automatic HTML-to-Markdown conversion on Pro+ plans ($20/mo+). RankReady provides the same capability for free, plus:
-
-- YAML frontmatter with categories and tags (Cloudflare omits these)
-- `<link rel="alternate" type="text/markdown">` discovery tag in HTML head
-- Visible "View as Markdown" link for human discovery
-- AI Summary (Key Takeaways) embedded in markdown output
-- Noindex-aware llms.txt with taxonomy controls
-- Per-crawler robots.txt management
-
-### vs LLMagnet / LovedByAI
-
-These are newer LLM SEO plugins:
-
-| Feature | RankReady | LLMagnet | LovedByAI |
-|---------|-----------|----------|-----------|
-| LLMs.txt | Yes | Yes | No |
-| Markdown endpoints | Yes | No | No |
-| Per-crawler robots.txt | 22 bots with toggles | No | No |
-| AI Summary | OpenAI-powered | No | No |
-| Speakable schema | Yes | No | No |
-| Bulk Author Changer | Yes | No | No |
-| Bot traffic analytics | No | Yes | Yes |
-| AI citation tracking | No | No | Yes |
-
-RankReady focuses on making your content optimally consumable by AI. LLMagnet and LovedByAI focus on tracking what AI does with your content. They're complementary, not competing.
-
----
-
-## How LLMs Discover Your Content
-
-RankReady creates multiple discovery paths so no AI crawler misses your content:
+Every post available as clean Markdown at `URL.md`:
 
 ```
-LLM Crawler visits your site
+https://example.com/my-post/     -> HTML
+https://example.com/my-post.md   -> Clean Markdown
+```
+
+- YAML frontmatter: title, date, author, description, categories, tags, word count
+- Strips Elementor, Divi, WPBakery, Beaver Builder markup
+- Content negotiation via `Accept: text/markdown` header
+- `<link rel="alternate" type="text/markdown">` auto-discovery
+- 5-minute transient cache keyed by `post_modified` — no repeated processing on bot crawls
+
+### 6. AI Crawler Management (robots.txt)
+
+Per-crawler toggles for **31 AI bots** with automatic robots.txt management:
+
+| Company | Bots |
+|---------|------|
+| **OpenAI** | GPTBot, ChatGPT-User, OAI-SearchBot |
+| **Anthropic** | ClaudeBot, anthropic-ai, Claude-Web |
+| **Google** | Google-Extended, GoogleOther |
+| **Apple** | Applebot-Extended |
+| **Microsoft** | Bingbot |
+| **Perplexity** | PerplexityBot |
+| **Meta** | Meta-ExternalAgent, Meta-ExternalFetcher, FacebookBot |
+| **Mistral** | MistralAI-User |
+| **ByteDance** | Bytespider |
+| **Amazon** | Amazonbot |
+| **Cohere** | cohere-ai |
+| **Search Engines** | DuckAssistBot, YouBot, PhindBot |
+| **Training/Data** | CCBot, AI2Bot, Diffbot, Omgilibot, PetalBot, Brightbot, magpie-crawler, DataForSeoBot |
+
+**Strategy support:** Block training bots (GPTBot) while allowing search bots (OAI-SearchBot, ChatGPT-User). Per RFC 9309 spec. Append-only, never modifies existing plugin rules.
+
+### 7. Content Freshness Alerts
+
+Monitor content staleness that impacts AI visibility:
+
+- 65% of AI citations target content from the past year
+- 50% of citations are from content less than 13 weeks old
+- Configurable threshold: 60, 90, 180, or 365 days
+- Urgency levels: critical (>1yr), high (>6mo), moderate (>threshold)
+- Shows summary/FAQ status per post
+- Fresh percentage dashboard
+- Direct edit links for stale posts
+
+### 8. Bulk Author Changer (EEAT)
+
+Reassign post authors across any post type for E-E-A-T optimization:
+
+- Filter by post type, date range, source author
+- Preview count before executing
+- Batch processing with progress tracking
+- Capped at 10,000 posts per operation
+
+### 9. Tools Dashboard
+
+- **Health Check**: 12-point diagnostic scan of all plugin features
+- **API Usage Tracking**: OpenAI tokens + DataForSEO cost monitoring
+- **Error Log**: Recent API errors with source, timestamp, post reference
+- **Bulk Operations**: Summary, FAQ, and Start Over with resume capability
+
+---
+
+## How AI Discovers Your Content
+
+```
+AI Crawler visits your site
     |
     |-- robots.txt
     |     |-- Allow: /llms.txt
@@ -249,21 +180,20 @@ LLM Crawler visits your site
     |-- /llms.txt (structured site index)
     |     |-- Links to every published post
     |     |-- Links to /llms-full.txt
-    |     |-- Notes about .md availability
     |
     |-- /llms-full.txt (full content dump)
     |     |-- Every post as inline markdown
     |
     |-- /any-post.md (per-post markdown)
-    |     |-- YAML frontmatter (metadata)
+    |     |-- YAML frontmatter
     |     |-- AI Summary (key takeaways)
-    |     |-- Clean content (no HTML bloat)
+    |     |-- Clean content
     |
     |-- HTML page
+          |-- Article JSON-LD + Speakable schema
+          |-- FAQPage JSON-LD
           |-- <link rel="alternate" type="text/markdown">
           |-- Link HTTP header to .md version
-          |-- Article JSON-LD + Speakable schema
-          |-- Visible "View as Markdown" link
           |-- Accept: text/markdown negotiation
 ```
 
@@ -272,19 +202,51 @@ LLM Crawler visits your site
 ## Installation
 
 1. Download the latest release zip
-2. Go to **Plugins > Add New > Upload Plugin** in WordPress admin
-3. Upload the zip and activate
-4. Go to **RankReady** in the admin menu
-5. Configure your settings:
-   - **Settings tab**: OpenAI API key, post types, summary preferences
-   - **LLM Optimization tab**: LLMs.txt, Markdown, Crawler Access settings
-   - **Tools tab**: Bulk operations
+2. **Plugins > Add New > Upload Plugin** in WordPress admin
+3. Activate and go to **RankReady** in the admin menu
+4. Configure:
+   - **API Keys tab**: OpenAI key + DataForSEO credentials
+   - **AI Summary tab**: Post types, prompts, auto-generate settings
+   - **FAQ Generator tab**: FAQ count, brand terms, display settings
+   - **LLM Optimization tab**: LLMs.txt, Markdown, Crawler Access
+   - **Tools tab**: Bulk operations, freshness alerts, health check
 
 ## Requirements
 
 - WordPress 6.2+
 - PHP 7.4+
-- OpenAI API key (only needed for AI Summary feature)
+- OpenAI API key (for summary + FAQ generation)
+- DataForSEO credentials (for FAQ question discovery)
+
+---
+
+## Security
+
+- All REST endpoints require authentication + capability checks
+- `$wpdb->prepare()` with positional placeholders on all dynamic SQL
+- `sanitize_callback` on all REST route parameters
+- `esc_html()`, `esc_attr()`, `esc_url()` on all output
+- API keys never exposed in REST responses or health check output
+- Bulk operations capped at 10,000 posts
+- Physical robots.txt guarded against multisite conflicts
+- `flush_rewrite_rules()` deferred to `init` hook (prevents corrupting other plugins' rules)
+- Clean uninstall removes all options and post meta
+
+---
+
+## Compatibility
+
+**SEO Plugins** (read-only integration):
+- Rank Math, Yoast SEO, AIOSEO, SEOPress
+- Auto-detects focus keywords, respects noindex, prevents schema duplication
+
+**Page Builders** (strips wrapper markup in markdown):
+- Elementor, Divi, WPBakery, Beaver Builder, Gutenberg
+
+**Display Options**:
+- Gutenberg blocks (Summary + FAQ) with full style controls
+- Elementor widgets (Summary + FAQ)
+- Auto-display above or below content
 
 ---
 
@@ -294,56 +256,50 @@ LLM Crawler visits your site
 // Force RankReady's llms.txt even if another plugin handles it
 add_filter( 'rankready_force_llms_txt', '__return_true' );
 
-// Disable schema injection for specific posts
-add_filter( 'rankready_inject_schema', function( $inject, $post ) {
-    if ( $post->ID === 123 ) return false;
-    return $inject;
-}, 10, 2 );
-
-// Exclude specific posts from llms.txt programmatically
+// Exclude specific posts from llms.txt
 add_filter( 'rankready_exclude_from_llms', function( $exclude, $post ) {
     if ( $post->post_type === 'landing-page' ) return true;
     return $exclude;
 }, 10, 2 );
 
-// Hide the "View as Markdown" link on specific posts
-add_filter( 'rankready_show_md_link', function( $show, $post ) {
-    if ( $post->post_type === 'page' ) return false;
-    return $show;
+// Hide the "View as Markdown" link
+add_filter( 'rankready_show_md_link', '__return_false' );
+
+// Disable schema injection for specific posts
+add_filter( 'rankready_inject_schema', function( $inject, $post ) {
+    if ( $post->ID === 123 ) return false;
+    return $inject;
 }, 10, 2 );
 ```
 
 ---
 
-## Compatibility
+## Changelog
 
-Works alongside all major SEO plugins without conflicts:
+### 1.2
+- Content Freshness Alerts with urgency scoring
+- Expanded to 31 AI crawlers (was 22)
+- PHP 8.0+ compatibility fix (FAQ return type)
+- FAQ OpenAI call uses JSON response format
+- Markdown endpoints cached via transients
+- llms-full.txt uses strip_shortcodes for performance
+- flush_rewrite_rules deferred to init hook
 
-- **Rank Math** — Respects noindex, skips llms.txt if RM module active, never modifies RM robots.txt rules
-- **Yoast SEO** — Respects noindex, skips llms.txt if Yoast enables it
-- **AIOSEO** — Respects noindex, skips llms.txt if AIOSEO active
-- **SEOPress** — Respects noindex, skips llms.txt if SEOPress 9.5+
+### 0.4.6
+- Security hardening: API key leak prevention, SQL prepare, multisite guard
+- get_term_link WP_Error checks in schema
+- FAQ OpenAI HTTP status validation
+- Migration runs only once
 
-Works with all major page builders:
+### 0.4.5
+- Schema about/mentions work with ALL custom post types and custom taxonomies
 
-- **Elementor** — Strips all wrapper markup, dedicated Elementor widget included
-- **Divi** — Strips et_pb_ wrappers from markdown output
-- **WPBakery** — Strips vc_ and wpb_ wrappers
-- **Beaver Builder** — Strips fl- wrappers
-- **Gutenberg** — Strips block comments, native block included
+### 0.4.4
+- Health Check diagnostic tool
+- DataForSEO usage tracking
+- Resume button for bulk operations
 
----
-
-## Security
-
-- Nonce verification on all REST endpoints
-- Capability checks (`manage_options`) on all admin actions
-- Sanitized inputs on all settings
-- Content-hash validation prevents unauthorized summary regeneration
-- Bulk operations capped at 10,000 posts (memory safety)
-- Race condition guards on concurrent bulk operations
-- Rewrite rules scoped to exclude wp-admin, wp-content, wp-includes, wp-json
-- Physical robots.txt modifications are append-only and clearly marked for clean removal
+[Full changelog in readme.txt](readme.txt)
 
 ---
 
@@ -353,4 +309,4 @@ GPL-2.0-or-later. See [LICENSE](https://www.gnu.org/licenses/gpl-2.0.html).
 
 ---
 
-Built by [POSIMYTH Innovations](https://posimyth.com) | [Plugin Page](https://posimyth.com/rankready/)
+Built by [POSIMYTH Innovations](https://posimyth.com)

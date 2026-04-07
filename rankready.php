@@ -3,7 +3,7 @@
  * Plugin Name:       RankReady – LLM SEO, EEAT & AI Optimization
  * Plugin URI:        https://posimyth.com/rankready/
  * Description:       AI summaries, Article JSON-LD schema with speakable, LLMs.txt generator, Markdown endpoints for LLM crawlers, bulk author changer. Built for LLM SEO, EEAT, and AI Overviews.
- * Version:           2.5.0
+ * Version:           1.2
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            POSIMYTH Innovations
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 
 // ── Constants (guarded to prevent conflicts) ─────────────────────────────────
 if ( ! defined( 'RR_VERSION' ) ) {
-	define( 'RR_VERSION',  '2.5.0' );
+	define( 'RR_VERSION',  '1.2' );
 	define( 'RR_FILE',     __FILE__ );
 	define( 'RR_DIR',      plugin_dir_path( __FILE__ ) );
 	define( 'RR_URL',      plugin_dir_url( __FILE__ ) );
@@ -31,9 +31,11 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_OPT_LABEL',            'rr_default_label' );
 	define( 'RR_OPT_SHOW_LABEL',       'rr_default_show_label' );
 	define( 'RR_OPT_HEADING_TAG',      'rr_default_heading_tag' );
+	define( 'RR_OPT_AUTO_GENERATE',    'rr_auto_generate' );
 	define( 'RR_OPT_AUTO_DISPLAY',     'rr_auto_display' );
 	define( 'RR_OPT_DISPLAY_POSITION', 'rr_display_position' );
 	define( 'RR_OPT_CUSTOM_PROMPT',    'rr_custom_prompt' );
+	define( 'RR_OPT_PRODUCT_CONTEXT',  'rr_product_context' );
 
 	// Option keys — LLMs.txt.
 	define( 'RR_OPT_LLMS_ENABLE',       'rr_llms_enable' );
@@ -98,6 +100,12 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_FAQ_TOTAL',   'rr_faq_total' );
 	define( 'RR_FAQ_RUNNING', 'rr_faq_running' );
 
+	// Bulk state — start over.
+	define( 'RR_SO_QUEUE',   'rr_so_queue' );
+	define( 'RR_SO_DONE',    'rr_so_done' );
+	define( 'RR_SO_TOTAL',   'rr_so_total' );
+	define( 'RR_SO_RUNNING', 'rr_so_running' );
+
 	// Bulk state — author.
 	define( 'RR_BAC_QUEUE',   'rr_bac_queue' );
 	define( 'RR_BAC_TOTAL',   'rr_bac_total' );
@@ -140,8 +148,45 @@ add_action( 'plugins_loaded', function (): void {
 		update_option( 'rr_installed_version', RR_VERSION );
 		RR_Llms_Txt::add_rewrite_rules();
 		RR_Markdown::add_rewrite_rules();
-		flush_rewrite_rules();
+		// Defer flush to 'init' so all plugins/themes have registered their rules.
+		add_action( 'init', 'flush_rewrite_rules', 99 );
 		RR_Llms_Txt::sync_physical_robots_txt();
+
+		// Migrate data from old AI Post Summary plugin (_aps_ meta) if present.
+		// Only run once — skip if already migrated.
+		if ( ! get_option( 'rr_aps_migrated' ) ) {
+			global $wpdb;
+			$has_aps = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != '' LIMIT 1",
+				'_aps_summary'
+			) );
+			if ( $has_aps > 0 ) {
+				// Update existing empty _rr_summary entries with old _aps_summary data.
+				$wpdb->query( $wpdb->prepare(
+					"UPDATE {$wpdb->postmeta} rr
+					 INNER JOIN {$wpdb->postmeta} aps ON aps.post_id = rr.post_id AND aps.meta_key = %s AND aps.meta_value != ''
+					 SET rr.meta_value = aps.meta_value
+					 WHERE rr.meta_key = %s AND (rr.meta_value = '' OR rr.meta_value IS NULL)",
+					'_aps_summary',
+					'_rr_summary'
+				) );
+				// Insert for posts that have _aps_summary but no _rr_summary row at all.
+				$wpdb->query( $wpdb->prepare(
+					"INSERT INTO {$wpdb->postmeta} (post_id, meta_key, meta_value)
+					 SELECT pm.post_id, %s, pm.meta_value
+					 FROM {$wpdb->postmeta} pm
+					 WHERE pm.meta_key = %s
+					   AND pm.meta_value != ''
+					   AND pm.post_id NOT IN (
+					       SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s
+					   )",
+					'_rr_summary',
+					'_aps_summary',
+					'_rr_summary'
+				) );
+			}
+			update_option( 'rr_aps_migrated', true );
+		}
 	}
 
 	RR_Admin::init();
@@ -220,6 +265,7 @@ register_deactivation_hook( RR_FILE, function (): void {
 	if ( $timestamp ) {
 		wp_unschedule_event( $timestamp, RR_CRON_HOOK );
 	}
+	wp_clear_scheduled_hook( 'rr_async_faq_generate' );
 	update_option( RR_BULK_RUNNING, false );
 	update_option( RR_BAC_RUNNING, false );
 	update_option( RR_FAQ_RUNNING, false );

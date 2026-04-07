@@ -148,6 +148,11 @@ class RR_Llms_Txt {
 	 * Safe: only touches the RankReady-marked block, never modifies other rules.
 	 */
 	public static function sync_physical_robots_txt(): void {
+		// Skip physical robots.txt on multisite — subsites share ABSPATH.
+		if ( is_multisite() ) {
+			return;
+		}
+
 		$file = ABSPATH . 'robots.txt';
 
 		if ( ! file_exists( $file ) ) {
@@ -525,7 +530,7 @@ class RR_Llms_Txt {
 
 				$title   = self::clean_text( get_the_title( $post ) );
 				$url     = get_permalink( $post );
-				$content = self::post_to_clean_markdown( $post );
+				$content = self::post_to_clean_markdown( $post, false );
 
 				// Per-page separator: # Title + Source URL
 				$lines[] = '# ' . $title;
@@ -568,7 +573,7 @@ class RR_Llms_Txt {
 	// content: headings, paragraphs, lists, links, images, blockquotes, code.
 	// ═══════════════════════════════════════════════════════════════════════════
 
-	public static function post_to_clean_markdown( $post ): string {
+	public static function post_to_clean_markdown( $post, bool $run_shortcodes = true ): string {
 		$html = $post->post_content;
 
 		if ( empty( $html ) ) {
@@ -578,8 +583,8 @@ class RR_Llms_Txt {
 		// ── Step 1: Strip Gutenberg block comments ────────────────────────
 		$html = preg_replace( '/<!--\s*\/?wp:[^\>]+-->/s', '', $html );
 
-		// ── Step 2: Run shortcodes so [shortcode] content gets rendered ───
-		$html = do_shortcode( $html );
+		// ── Step 2: Shortcodes — run them for individual requests, strip for bulk ──
+		$html = $run_shortcodes ? do_shortcode( $html ) : strip_shortcodes( $html );
 
 		// ── Step 3: Strip ALL page builder wrapper elements ───────────────
 		// Elementor: div.elementor-*, section.elementor-*, div.e-*, etc.

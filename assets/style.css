@@ -71,31 +71,37 @@
 
 .rr-faq-title {
 	margin-top: 0;
-	margin-bottom: 1em;
+	margin-bottom: 1.25em;
 }
 
 /* ── FAQ Item ─────────────────────────────────────────────────────────── */
 
 .rr-faq-item {
-	border-bottom: 1px solid #e5e7eb;
-	padding: 0.75em 0;
+	padding: 0;
+	margin-bottom: 1.25em;
 }
 
 .rr-faq-item:last-child {
-	border-bottom: none;
+	margin-bottom: 0;
 }
 
 .rr-faq-question {
 	font-weight: 600;
-	margin: 0 0 0.4em;
-	line-height: 1.5;
+	margin: 0 0 0.35em;
+	line-height: 1.45;
 }
 
 .rr-faq-answer {
 	margin: 0;
 	line-height: 1.7;
 	color: inherit;
-	opacity: 0.9;
+	opacity: 0.85;
+}
+
+.rr-faq-answer a {
+	color: inherit;
+	text-decoration: underline;
+	text-underline-offset: 2px;
 }
 
 /* ── Reviewed Date ────────────────────────────────────────────────────── */

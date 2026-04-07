@@ -26,6 +26,22 @@ class RR_Admin {
 		add_filter( 'plugin_action_links_' . RR_BASENAME, array( self::class, 'action_links' ) );
 		add_action( 'add_meta_boxes',        array( self::class, 'register_meta_box' ) );
 		add_action( 'save_post',             array( self::class, 'save_meta_box' ) );
+
+		// Defer column registration to 'wp_loaded' so all CPTs are registered.
+		add_action( 'wp_loaded', array( self::class, 'register_status_columns' ) );
+	}
+
+	// ── Status columns (deferred to wp_loaded so CPTs exist) ─────────────────
+
+	public static function register_status_columns(): void {
+		$public_types = get_post_types( array( 'public' => true ), 'names' );
+		foreach ( $public_types as $pt ) {
+			if ( 'attachment' === $pt ) {
+				continue;
+			}
+			add_filter( "manage_{$pt}_posts_columns",       array( self::class, 'add_status_column' ) );
+			add_action( "manage_{$pt}_posts_custom_column",  array( self::class, 'render_status_column' ), 10, 2 );
+		}
 	}
 
 	// ── Menu ──────────────────────────────────────────────────────────────────
@@ -84,6 +100,18 @@ class RR_Admin {
 			'type'              => 'string',
 			'sanitize_callback' => 'sanitize_textarea_field',
 			'default'           => '',
+		) );
+
+		register_setting( self::SETTINGS_GROUP, RR_OPT_PRODUCT_CONTEXT, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_textarea_field',
+			'default'           => '',
+		) );
+
+		register_setting( self::SETTINGS_GROUP, RR_OPT_AUTO_GENERATE, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'off',
 		) );
 
 		register_setting( self::SETTINGS_GROUP, RR_OPT_AUTO_DISPLAY, array(
@@ -218,13 +246,13 @@ class RR_Admin {
 
 		register_setting( self::FAQ_GROUP, RR_OPT_DFS_LOGIN, array(
 			'type'              => 'string',
-			'sanitize_callback' => 'sanitize_text_field',
+			'sanitize_callback' => array( self::class, 'sanitize_dfs_login' ),
 			'default'           => '',
 		) );
 
 		register_setting( self::FAQ_GROUP, RR_OPT_DFS_PASSWORD, array(
 			'type'              => 'string',
-			'sanitize_callback' => 'sanitize_text_field',
+			'sanitize_callback' => array( self::class, 'sanitize_dfs_password' ),
 			'default'           => '',
 		) );
 
@@ -275,7 +303,8 @@ class RR_Admin {
 
 	public static function sanitize_api_key( $value ): string {
 		$value = sanitize_text_field( (string) $value );
-		if ( false !== strpos( $value, '••••' ) ) {
+		// Sentinel or masked value means "don't change".
+		if ( '__UNCHANGED__' === $value || false !== strpos( $value, '••••' ) ) {
 			return (string) get_option( RR_OPT_KEY, '' );
 		}
 		if ( ! empty( $value ) && ! preg_match( '/^sk-[A-Za-z0-9\-_]{20,}$/', $value ) ) {
@@ -284,6 +313,32 @@ class RR_Admin {
 			return (string) get_option( RR_OPT_KEY, '' );
 		}
 		return $value;
+	}
+
+	public static function sanitize_dfs_login( $value ): string {
+		$value = sanitize_text_field( (string) $value );
+		if ( '__UNCHANGED__' === $value ) {
+			return (string) get_option( RR_OPT_DFS_LOGIN, '' );
+		}
+		return $value;
+	}
+
+	public static function sanitize_dfs_password( $value ): string {
+		$value = (string) $value;
+		// Sentinel from FAQ tab hidden field.
+		if ( '__UNCHANGED__' === $value ) {
+			return (string) get_option( RR_OPT_DFS_PASSWORD, '' );
+		}
+		// Masked display value — don't overwrite stored password.
+		if ( false !== strpos( $value, "\xE2\x80\xA2" ) ) {
+			return (string) get_option( RR_OPT_DFS_PASSWORD, '' );
+		}
+		// Empty means user cleared it.
+		if ( '' === trim( $value ) ) {
+			return '';
+		}
+		// Real password — store as-is (no sanitize_text_field, it can mangle hex strings).
+		return trim( $value );
 	}
 
 	public static function sanitize_model( $value ): string {
@@ -344,37 +399,48 @@ class RR_Admin {
 	 */
 	public static function get_llm_crawlers(): array {
 		return array(
-			// OpenAI
-			'GPTBot'              => array( 'OpenAI', 'ChatGPT search & AI training' ),
+			// ── OpenAI ────────────────────────────────────────────────────────
+			'GPTBot'              => array( 'OpenAI', 'GPT model training data' ),
 			'ChatGPT-User'        => array( 'OpenAI', 'ChatGPT browse mode (user-initiated)' ),
-			'OAI-SearchBot'       => array( 'OpenAI', 'SearchGPT / ChatGPT search results' ),
-			// Anthropic
-			'ClaudeBot'           => array( 'Anthropic', 'Claude AI web retrieval' ),
+			'OAI-SearchBot'       => array( 'OpenAI', 'ChatGPT search results' ),
+			// ── Anthropic ─────────────────────────────────────────────────────
+			'ClaudeBot'           => array( 'Anthropic', 'Claude AI retrieval + training' ),
+			'anthropic-ai'        => array( 'Anthropic', 'Anthropic training data collection' ),
 			'Claude-Web'          => array( 'Anthropic', 'Claude AI (legacy identifier)' ),
-			// Google
+			// ── Google ────────────────────────────────────────────────────────
 			'Google-Extended'     => array( 'Google', 'Gemini AI training (does NOT affect search ranking)' ),
-			// Apple
-			'Applebot-Extended'   => array( 'Apple', 'Apple Intelligence / Siri AI' ),
-			// Microsoft
+			'GoogleOther'         => array( 'Google', 'Google R&D crawling (non-search)' ),
+			// ── Apple ─────────────────────────────────────────────────────────
+			'Applebot-Extended'   => array( 'Apple', 'Apple Intelligence / Siri AI features' ),
+			// ── Microsoft ─────────────────────────────────────────────────────
 			'Bingbot'             => array( 'Microsoft', 'Bing Search + Copilot (shared UA)' ),
-			// Perplexity
+			// ── Perplexity ────────────────────────────────────────────────────
 			'PerplexityBot'       => array( 'Perplexity', 'Perplexity AI answer engine' ),
-			// Meta
+			// ── Meta ──────────────────────────────────────────────────────────
 			'Meta-ExternalAgent'  => array( 'Meta', 'Meta AI / Llama training' ),
+			'Meta-ExternalFetcher' => array( 'Meta', 'Meta AI real-time retrieval' ),
 			'FacebookBot'         => array( 'Meta', 'Facebook/Meta content crawling' ),
-			// ByteDance
+			// ── Mistral ───────────────────────────────────────────────────────
+			'MistralAI-User'      => array( 'Mistral', 'Le Chat real-time browsing' ),
+			// ── ByteDance ─────────────────────────────────────────────────────
 			'Bytespider'          => array( 'ByteDance', 'TikTok / ByteDance AI' ),
-			// Amazon
+			// ── Amazon ────────────────────────────────────────────────────────
 			'Amazonbot'           => array( 'Amazon', 'Alexa AI / Amazon' ),
-			// Cohere
+			// ── Cohere ────────────────────────────────────────────────────────
 			'cohere-ai'           => array( 'Cohere', 'Cohere AI RAG & enterprise' ),
-			// Others
+			// ── AI Search Engines ─────────────────────────────────────────────
 			'DuckAssistBot'       => array( 'DuckDuckGo', 'DuckDuckGo AI Assist' ),
 			'YouBot'              => array( 'You.com', 'You.com AI search' ),
+			'PhindBot'            => array( 'Phind', 'Phind AI search for developers' ),
+			// ── Training / Dataset Crawlers ────────────────────────────────────
 			'CCBot'               => array( 'Common Crawl', 'Open dataset used by many LLMs' ),
 			'AI2Bot'              => array( 'Allen Institute', 'AI2 research crawler' ),
 			'Diffbot'             => array( 'Diffbot', 'Diffbot AI extraction' ),
-			'PhindBot'            => array( 'Phind', 'Phind AI search for developers' ),
+			'Omgilibot'           => array( 'Webz.io', 'AI content aggregation' ),
+			'PetalBot'            => array( 'Huawei', 'Huawei search & AI data' ),
+			'Brightbot'           => array( 'BrightEdge', 'AI SEO data crawling' ),
+			'magpie-crawler'      => array( 'Magpie', 'AI data collection' ),
+			'DataForSeoBot'       => array( 'DataForSEO', 'SEO data with AI uses' ),
 		);
 	}
 
@@ -385,17 +451,23 @@ class RR_Admin {
 			wp_die( esc_html__( 'You do not have permission to access this page.', 'rankready' ) );
 		}
 
-		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'settings';
+		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'api';
 		$tabs       = array(
-			'settings' => __( 'Settings', 'rankready' ),
-			'llm'      => __( 'LLM Optimization', 'rankready' ),
+			'api'      => __( 'API Keys', 'rankready' ),
+			'summary'  => __( 'AI Summary', 'rankready' ),
 			'faq'      => __( 'FAQ Generator', 'rankready' ),
+			'llm'      => __( 'LLM Optimization', 'rankready' ),
 			'tools'    => __( 'Tools', 'rankready' ),
 			'info'     => __( 'Info', 'rankready' ),
 		);
 
+		// Backward compat: old "settings" tab → "api".
+		if ( 'settings' === $active_tab ) {
+			$active_tab = 'api';
+		}
+
 		if ( ! array_key_exists( $active_tab, $tabs ) ) {
-			$active_tab = 'settings';
+			$active_tab = 'api';
 		}
 		?>
 		<div class="wrap rr-wrap">
@@ -420,14 +492,17 @@ class RR_Admin {
 			<div class="rr-tab-content">
 				<?php
 				switch ( $active_tab ) {
-					case 'settings':
-						self::render_tab_settings();
+					case 'api':
+						self::render_tab_api();
 						break;
-					case 'llm':
-						self::render_tab_llm();
+					case 'summary':
+						self::render_tab_summary();
 						break;
 					case 'faq':
 						self::render_tab_faq();
+						break;
+					case 'llm':
+						self::render_tab_llm();
 						break;
 					case 'tools':
 						self::render_tab_tools();
@@ -443,10 +518,10 @@ class RR_Admin {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
-	// TAB: Settings
+	// TAB: API Keys
 	// ═══════════════════════════════════════════════════════════════════════════
 
-	private static function render_tab_settings(): void {
+	private static function render_tab_api(): void {
 		$key     = (string) get_option( RR_OPT_KEY, '' );
 		$display = ! empty( $key ) ? substr( $key, 0, 7 ) . str_repeat( '••••', 6 ) : '';
 		?>
@@ -455,10 +530,10 @@ class RR_Admin {
 		<form method="post" action="options.php" novalidate="novalidate">
 			<?php settings_fields( self::SETTINGS_GROUP ); ?>
 
-			<!-- OpenAI Configuration -->
+			<!-- OpenAI -->
 			<div class="rr-card">
-				<h2 class="rr-card-title"><?php esc_html_e( 'OpenAI Configuration', 'rankready' ); ?></h2>
-				<p class="rr-card-desc"><?php esc_html_e( 'Connect your OpenAI API key to enable AI-powered summary generation.', 'rankready' ); ?></p>
+				<h2 class="rr-card-title"><?php esc_html_e( 'OpenAI', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Powers AI Summary generation and FAQ answer writing.', 'rankready' ); ?></p>
 
 				<table class="form-table rr-form-table">
 					<tr>
@@ -467,14 +542,13 @@ class RR_Admin {
 							<input type="password" id="rr_api_key" name="<?php echo esc_attr( RR_OPT_KEY ); ?>"
 								   value="<?php echo esc_attr( $display ); ?>" class="regular-text"
 								   autocomplete="new-password" spellcheck="false" />
-							<p class="description"><?php esc_html_e( 'Your OpenAI secret key. Stored server-side only.', 'rankready' ); ?></p>
-							<?php if ( ! empty( $key ) ) : ?>
-								<p style="margin-top:8px;">
-									<a href="<?php echo esc_url( self::test_connection_url() ); ?>" class="button button-secondary">
-										<?php esc_html_e( 'Test Connection', 'rankready' ); ?>
-									</a>
-								</p>
-							<?php endif; ?>
+							<p style="margin-top:8px;">
+								<button type="button" id="rr-verify-key" class="button button-secondary">
+									<?php esc_html_e( 'Verify Key', 'rankready' ); ?>
+								</button>
+								<span id="rr-verify-status" style="margin-left:10px;font-size:13px;display:none;"></span>
+							</p>
+							<p class="description"><?php esc_html_e( 'Your OpenAI secret key (sk-...). Stored server-side only.', 'rankready' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -488,21 +562,133 @@ class RR_Admin {
 									</option>
 								<?php endforeach; ?>
 							</select>
-							<p class="description"><?php esc_html_e( 'gpt-4o-mini recommended — fast, cheap, accurate for summaries.', 'rankready' ); ?></p>
+							<p class="description"><?php esc_html_e( 'gpt-4o-mini recommended for both summaries and FAQ.', 'rankready' ); ?></p>
 						</td>
 					</tr>
+				</table>
+			</div>
+
+			<!-- Product Context -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'Product Context', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Describe your product/brand so the AI knows what it is writing about. This is injected into both Key Takeaways and FAQ prompts to prevent hallucination.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+					<tr>
+						<th scope="row"><label for="rr_product_context"><?php esc_html_e( 'Product / Brand Info', 'rankready' ); ?></label></th>
+						<td>
+							<textarea name="<?php echo esc_attr( RR_OPT_PRODUCT_CONTEXT ); ?>" id="rr_product_context"
+									  rows="6" class="large-text"
+									  placeholder="<?php esc_attr_e( 'Example: The Plus Addons for Elementor is a WordPress plugin that adds 120+ widgets to the Elementor page builder. It does NOT work with Gutenberg, Beaver Builder, or any other builder. Our brand name is POSIMYTH. Website: theplusaddons.com', 'rankready' ); ?>"
+							><?php echo esc_textarea( (string) get_option( RR_OPT_PRODUCT_CONTEXT, '' ) ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Tell the AI what your product is, what it does, what it does NOT do, brand names, and any facts it must get right. Used in both Summary and FAQ generation.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<!-- Hidden fields for product context when saving from other tabs -->
+			<?php submit_button( __( 'Save API Settings', 'rankready' ) ); ?>
+		</form>
+
+		<!-- DataForSEO (separate form, FAQ group) -->
+		<form method="post" action="options.php" novalidate="novalidate">
+			<?php settings_fields( self::FAQ_GROUP ); ?>
+
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'DataForSEO', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Powers FAQ question discovery via keyword suggestions and related keywords. Sign up at dataforseo.com.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+					<tr>
+						<th scope="row"><label for="rr_dfs_login"><?php esc_html_e( 'API Login', 'rankready' ); ?></label></th>
+						<td>
+							<input type="text" id="rr_dfs_login" name="<?php echo esc_attr( RR_OPT_DFS_LOGIN ); ?>"
+							       value="<?php echo esc_attr( (string) get_option( RR_OPT_DFS_LOGIN, '' ) ); ?>"
+							       class="regular-text" autocomplete="off" />
+							<p class="description"><?php esc_html_e( 'Your DataForSEO API login email.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="rr_dfs_password"><?php esc_html_e( 'API Password', 'rankready' ); ?></label></th>
+						<td>
+							<?php $dfs_pw = (string) get_option( RR_OPT_DFS_PASSWORD, '' ); ?>
+							<?php $dfs_pw_display = ! empty( $dfs_pw ) ? str_repeat( '••••', 4 ) : ''; ?>
+							<input type="password" id="rr_dfs_password" name="<?php echo esc_attr( RR_OPT_DFS_PASSWORD ); ?>"
+							       value="<?php echo esc_attr( $dfs_pw_display ); ?>"
+							       class="regular-text" autocomplete="new-password" />
+							<p class="description"><?php esc_html_e( 'Your DataForSEO API password. Enter a new value to change.', 'rankready' ); ?></p>
+							<p style="margin-top:8px;">
+								<button type="button" id="rr-verify-dfs" class="button button-secondary">
+									<?php esc_html_e( 'Verify DataForSEO', 'rankready' ); ?>
+								</button>
+								<span id="rr-verify-dfs-status" style="margin-left:10px;font-size:13px;display:none;"></span>
+							</p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<?php submit_button( __( 'Save DataForSEO Settings', 'rankready' ) ); ?>
+		</form>
+
+		<!-- Connection Status -->
+		<div class="rr-card rr-card--subtle">
+			<h3 class="rr-card-title" style="font-size:14px;"><?php esc_html_e( 'Status', 'rankready' ); ?></h3>
+			<div class="rr-stats-row" style="margin-top:12px;">
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo ! empty( get_option( RR_OPT_KEY, '' ) ) ? '&#10003;' : '&#10007;'; ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'OpenAI Key', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo ! empty( get_option( RR_OPT_DFS_LOGIN, '' ) ) && ! empty( get_option( RR_OPT_DFS_PASSWORD, '' ) ) ? '&#10003;' : '&#10007;'; ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'DataForSEO', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( get_option( RR_OPT_MODEL, 'gpt-4o-mini' ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'Active Model', 'rankready' ); ?></span>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// TAB: AI Summary
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	private static function render_tab_summary(): void {
+		?>
+		<?php settings_errors(); ?>
+
+		<form method="post" action="options.php" novalidate="novalidate">
+			<?php settings_fields( self::SETTINGS_GROUP ); ?>
+
+			<!-- Preserve API key, model, and product context when saving from this tab -->
+			<input type="hidden" name="<?php echo esc_attr( RR_OPT_KEY ); ?>" value="__UNCHANGED__" />
+			<input type="hidden" name="<?php echo esc_attr( RR_OPT_MODEL ); ?>" value="<?php echo esc_attr( (string) get_option( RR_OPT_MODEL, 'gpt-4o-mini' ) ); ?>" />
+			<input type="hidden" name="<?php echo esc_attr( RR_OPT_PRODUCT_CONTEXT ); ?>" value="<?php echo esc_attr( (string) get_option( RR_OPT_PRODUCT_CONTEXT, '' ) ); ?>" />
+
+			<!-- Post Types & Prompt -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'Summary Generation', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Configure which posts get AI summaries and how they are generated.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Post Types', 'rankready' ); ?></th>
 						<td>
 							<?php $selected_types = (array) get_option( RR_OPT_POST_TYPES, array( 'post' ) ); ?>
-							<?php foreach ( self::get_allowed_post_types() as $slug => $label ) : ?>
-								<label style="display:block;margin-bottom:4px;">
-									<input type="checkbox" name="<?php echo esc_attr( RR_OPT_POST_TYPES ); ?>[]"
-										   value="<?php echo esc_attr( $slug ); ?>"
-										   <?php checked( in_array( $slug, $selected_types, true ) ); ?> />
-									<?php echo esc_html( $label ); ?>
-								</label>
-							<?php endforeach; ?>
+							<div class="rr-checkboxes-inline">
+								<?php foreach ( self::get_allowed_post_types() as $slug => $label ) : ?>
+									<label>
+										<input type="checkbox" name="<?php echo esc_attr( RR_OPT_POST_TYPES ); ?>[]"
+											   value="<?php echo esc_attr( $slug ); ?>"
+											   <?php checked( in_array( $slug, $selected_types, true ) ); ?> />
+										<?php echo esc_html( $label ); ?>
+									</label>
+								<?php endforeach; ?>
+							</div>
 							<p class="description"><?php esc_html_e( 'Summaries will only auto-generate for selected post types.', 'rankready' ); ?></p>
 						</td>
 					</tr>
@@ -514,6 +700,18 @@ class RR_Admin {
 									  placeholder="<?php esc_attr_e( 'Leave empty to use the default optimized prompt.', 'rankready' ); ?>"
 							><?php echo esc_textarea( (string) get_option( RR_OPT_CUSTOM_PROMPT, '' ) ); ?></textarea>
 							<p class="description"><?php esc_html_e( 'Optional. Extra instructions appended to the AI prompt.', 'rankready' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Auto-Generate on Publish', 'rankready' ); ?></th>
+						<td>
+							<?php $auto_gen = (string) get_option( RR_OPT_AUTO_GENERATE, 'off' ); ?>
+							<label>
+								<input type="hidden" name="<?php echo esc_attr( RR_OPT_AUTO_GENERATE ); ?>" value="off" />
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_AUTO_GENERATE ); ?>" value="on" <?php checked( $auto_gen, 'on' ); ?> />
+								<?php esc_html_e( 'Automatically generate Key Takeaways when a post is published or updated', 'rankready' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'Off by default. When off, summaries are only generated via the Regenerate button, Gutenberg block, or Bulk Generate. Existing summaries are always kept.', 'rankready' ); ?></p>
 						</td>
 					</tr>
 				</table>
@@ -593,7 +791,7 @@ class RR_Admin {
 				</table>
 			</div>
 
-			<?php submit_button( __( 'Save Settings', 'rankready' ) ); ?>
+			<?php submit_button( __( 'Save Summary Settings', 'rankready' ) ); ?>
 		</form>
 		<?php
 	}
@@ -940,32 +1138,9 @@ class RR_Admin {
 		<form method="post" action="options.php" novalidate="novalidate">
 			<?php settings_fields( self::FAQ_GROUP ); ?>
 
-			<!-- DataForSEO Configuration -->
-			<div class="rr-card">
-				<h2 class="rr-card-title"><?php esc_html_e( 'DataForSEO API', 'rankready' ); ?></h2>
-				<p class="rr-card-desc"><?php esc_html_e( 'DataForSEO powers question discovery via keyword suggestions and related keywords. Sign up at dataforseo.com.', 'rankready' ); ?></p>
-
-				<table class="form-table rr-form-table">
-					<tr>
-						<th scope="row"><label for="rr_dfs_login"><?php esc_html_e( 'API Login', 'rankready' ); ?></label></th>
-						<td>
-							<input type="text" id="rr_dfs_login" name="<?php echo esc_attr( RR_OPT_DFS_LOGIN ); ?>"
-							       value="<?php echo esc_attr( (string) get_option( RR_OPT_DFS_LOGIN, '' ) ); ?>"
-							       class="regular-text" autocomplete="off" />
-							<p class="description"><?php esc_html_e( 'Your DataForSEO API login email.', 'rankready' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="rr_dfs_password"><?php esc_html_e( 'API Password', 'rankready' ); ?></label></th>
-						<td>
-							<input type="password" id="rr_dfs_password" name="<?php echo esc_attr( RR_OPT_DFS_PASSWORD ); ?>"
-							       value="<?php echo esc_attr( (string) get_option( RR_OPT_DFS_PASSWORD, '' ) ); ?>"
-							       class="regular-text" autocomplete="new-password" />
-							<p class="description"><?php esc_html_e( 'Your DataForSEO API password.', 'rankready' ); ?></p>
-						</td>
-					</tr>
-				</table>
-			</div>
+			<!-- Preserve DFS credentials when saving from this tab (sentinel values prevent leaking secrets) -->
+			<input type="hidden" name="<?php echo esc_attr( RR_OPT_DFS_LOGIN ); ?>" value="__UNCHANGED__" />
+			<input type="hidden" name="<?php echo esc_attr( RR_OPT_DFS_PASSWORD ); ?>" value="__UNCHANGED__" />
 
 			<!-- FAQ Settings -->
 			<div class="rr-card">
@@ -1070,6 +1245,31 @@ class RR_Admin {
 
 			<?php submit_button( __( 'Save FAQ Settings', 'rankready' ) ); ?>
 		</form>
+
+		<!-- Posts with FAQ Generated -->
+		<div class="rr-card" style="margin-top:20px;">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Posts with FAQ', 'rankready' ); ?></h2>
+			<p class="rr-card-desc"><?php esc_html_e( 'All posts that have FAQ content generated. Click to load the list.', 'rankready' ); ?></p>
+			<p>
+				<button type="button" id="rr-faq-load-posts" class="button button-secondary">
+					<?php esc_html_e( 'Load FAQ Posts', 'rankready' ); ?>
+				</button>
+				<span id="rr-faq-posts-count" style="margin-left:10px;font-size:13px;color:#646970;display:none;"></span>
+			</p>
+			<div id="rr-faq-posts-list" style="display:none;margin-top:16px;max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
+				<table class="widefat striped" style="margin:0;">
+					<thead>
+						<tr>
+							<th style="width:40%;"><?php esc_html_e( 'Post Title', 'rankready' ); ?></th>
+							<th><?php esc_html_e( 'Type', 'rankready' ); ?></th>
+							<th><?php esc_html_e( 'FAQ Generated', 'rankready' ); ?></th>
+							<th style="width:15%;"><?php esc_html_e( 'Actions', 'rankready' ); ?></th>
+						</tr>
+					</thead>
+					<tbody id="rr-faq-posts-tbody"></tbody>
+				</table>
+			</div>
+		</div>
 		<?php
 	}
 
@@ -1105,7 +1305,9 @@ class RR_Admin {
 					<th></th>
 					<td>
 						<button id="rr-bulk-start" class="button button-primary"><?php esc_html_e( 'Start Bulk Generate', 'rankready' ); ?></button>
+						<button id="rr-bulk-resume" class="button button-secondary" style="margin-left:8px;"><?php esc_html_e( 'Resume', 'rankready' ); ?></button>
 						<button id="rr-bulk-stop" class="button button-secondary" style="display:none;margin-left:8px;"><?php esc_html_e( 'Stop', 'rankready' ); ?></button>
+						<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Skips posts with unchanged content. Resume picks up from where you stopped.', 'rankready' ); ?></p>
 					</td>
 				</tr>
 			</table>
@@ -1115,6 +1317,44 @@ class RR_Admin {
 					<div id="rr-bulk-bar" class="rr-progress-fill"></div>
 				</div>
 				<p id="rr-bulk-status" class="rr-progress-label"><?php esc_html_e( 'Preparing...', 'rankready' ); ?></p>
+			</div>
+		</div>
+
+		<!-- Start Over — Bulk Clear + Regenerate -->
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Start Over — Clear & Regenerate All', 'rankready' ); ?></h2>
+			<p class="rr-card-desc">
+				<?php esc_html_e( 'Clears ALL existing Key Takeaways and FAQ data, then regenerates both from scratch using current prompts. Ignores auto-generate setting.', 'rankready' ); ?>
+			</p>
+
+			<table class="form-table rr-form-table" style="width:auto;">
+				<tr>
+					<th style="padding:10px 20px 10px 0;"><?php esc_html_e( 'Post Types', 'rankready' ); ?></th>
+					<td>
+						<?php foreach ( $post_types as $slug => $label ) : ?>
+							<label style="display:block;margin-bottom:4px;">
+								<input type="checkbox" class="rr-startover-type" value="<?php echo esc_attr( $slug ); ?>" checked />
+								<?php echo esc_html( $label ); ?>
+							</label>
+						<?php endforeach; ?>
+					</td>
+				</tr>
+				<tr>
+					<th></th>
+					<td>
+						<button type="button" id="rr-startover-btn" class="button button-primary"><?php esc_html_e( 'Start Over — Bulk Regenerate', 'rankready' ); ?></button>
+						<button type="button" id="rr-startover-resume" class="button button-secondary" style="margin-left:8px;"><?php esc_html_e( 'Resume', 'rankready' ); ?></button>
+						<button type="button" id="rr-startover-stop" class="button button-secondary" style="display:none;margin-left:8px;"><?php esc_html_e( 'Stop', 'rankready' ); ?></button>
+						<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Deletes old data first, then generates fresh. Processes 1 post at a time. Resume picks up where you stopped.', 'rankready' ); ?></p>
+					</td>
+				</tr>
+			</table>
+
+			<div id="rr-startover-progress" style="display:none;margin-top:16px;">
+				<div class="rr-progress-track">
+					<div id="rr-startover-bar" class="rr-progress-fill"></div>
+				</div>
+				<p id="rr-startover-status" class="rr-progress-label"><?php esc_html_e( 'Preparing...', 'rankready' ); ?></p>
 			</div>
 		</div>
 
@@ -1217,6 +1457,98 @@ class RR_Admin {
 			<div id="rr-bac-done" style="display:none;" class="rr-notice rr-notice--success"></div>
 		</div>
 
+		<!-- Token Usage -->
+		<?php
+		$token_usage = (array) get_option( 'rr_token_usage', array(
+			'summary_tokens' => 0,
+			'faq_tokens'     => 0,
+			'total_calls'    => 0,
+		) );
+		$summary_tokens = isset( $token_usage['summary_tokens'] ) ? (int) $token_usage['summary_tokens'] : 0;
+		$faq_tokens     = isset( $token_usage['faq_tokens'] ) ? (int) $token_usage['faq_tokens'] : 0;
+		$total_calls    = isset( $token_usage['total_calls'] ) ? (int) $token_usage['total_calls'] : 0;
+		$total_tokens   = $summary_tokens + $faq_tokens;
+
+		// Estimated cost: GPT-4o-mini ~$0.15/1M input, $0.60/1M output.
+		// Blended estimate ~$0.30/1M tokens (we track total, not split).
+		$est_cost = ( $total_tokens / 1000000 ) * 0.30;
+
+		// DataForSEO usage.
+		$dfs_usage = (array) get_option( 'rr_dfs_usage', array(
+			'total_calls' => 0,
+			'total_cost'  => 0,
+		) );
+		$dfs_calls = isset( $dfs_usage['total_calls'] ) ? (int) $dfs_usage['total_calls'] : 0;
+		$dfs_cost  = isset( $dfs_usage['total_cost'] ) ? (float) $dfs_usage['total_cost'] : 0;
+		?>
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'API Usage', 'rankready' ); ?></h2>
+			<p class="rr-card-desc"><?php esc_html_e( 'Cumulative API usage tracked since this feature was enabled.', 'rankready' ); ?></p>
+
+			<div style="margin-top:12px;margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap;">
+				<div style="padding:10px 16px;background:#f0f6fc;border:1px solid #c8d8e8;border-radius:6px;display:inline-block;">
+					<span style="font-size:22px;font-weight:700;color:#1d2327;">$<?php echo esc_html( number_format( $est_cost, 4 ) ); ?></span>
+					<span style="font-size:13px;color:#646970;margin-left:6px;"><?php esc_html_e( 'Estimated Cost (GPT-4o-mini)', 'rankready' ); ?></span>
+				</div>
+				<?php if ( $dfs_calls > 0 || $dfs_cost > 0 ) : ?>
+				<div style="padding:10px 16px;background:#fef8f0;border:1px solid #e8d8c0;border-radius:6px;display:inline-block;">
+					<span style="font-size:22px;font-weight:700;color:#1d2327;">$<?php echo esc_html( number_format( $dfs_cost, 4 ) ); ?></span>
+					<span style="font-size:13px;color:#646970;margin-left:6px;"><?php esc_html_e( 'DataForSEO Cost', 'rankready' ); ?></span>
+				</div>
+				<?php endif; ?>
+			</div>
+
+			<h3 style="font-size:14px;margin:16px 0 8px;color:#1d2327;"><?php esc_html_e( 'OpenAI', 'rankready' ); ?></h3>
+			<div class="rr-stats-row">
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $summary_tokens ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'Summary Tokens', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $faq_tokens ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'FAQ Tokens', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $total_tokens ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'Total Tokens', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $total_calls ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'API Calls', 'rankready' ); ?></span>
+				</div>
+			</div>
+
+			<h3 style="font-size:14px;margin:16px 0 8px;color:#1d2327;"><?php esc_html_e( 'DataForSEO', 'rankready' ); ?></h3>
+			<div class="rr-stats-row">
+				<div class="rr-stat">
+					<span class="rr-stat-number"><?php echo esc_html( number_format_i18n( $dfs_calls ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'API Calls', 'rankready' ); ?></span>
+				</div>
+				<div class="rr-stat">
+					<span class="rr-stat-number">$<?php echo esc_html( number_format( $dfs_cost, 4 ) ); ?></span>
+					<span class="rr-stat-label"><?php esc_html_e( 'Total Cost', 'rankready' ); ?></span>
+				</div>
+			</div>
+
+			<p style="margin-top:16px;">
+				<button type="button" id="rr-tokens-load" class="button button-secondary"><?php esc_html_e( 'Load Per-Post Details', 'rankready' ); ?></button>
+				<span id="rr-tokens-count" style="margin-left:10px;font-size:13px;display:none;"></span>
+			</p>
+			<div id="rr-tokens-list" style="display:none;margin-top:12px;max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
+				<table class="widefat striped" style="margin:0;">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Post', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'Type', 'rankready' ); ?></th>
+							<th style="width:12%;"><?php esc_html_e( 'Tokens Used', 'rankready' ); ?></th>
+							<th style="width:15%;"><?php esc_html_e( 'Actions', 'rankready' ); ?></th>
+						</tr>
+					</thead>
+					<tbody id="rr-tokens-tbody"></tbody>
+				</table>
+			</div>
+		</div>
+
 		<!-- Bulk Generate FAQs -->
 		<div class="rr-card">
 			<h2 class="rr-card-title"><?php esc_html_e( 'Bulk Generate FAQs', 'rankready' ); ?></h2>
@@ -1240,7 +1572,9 @@ class RR_Admin {
 					<th></th>
 					<td>
 						<button id="rr-faq-bulk-start" class="button button-primary"><?php esc_html_e( 'Start Bulk FAQ Generate', 'rankready' ); ?></button>
+						<button id="rr-faq-bulk-resume" class="button button-secondary" style="margin-left:8px;"><?php esc_html_e( 'Resume', 'rankready' ); ?></button>
 						<button id="rr-faq-bulk-stop" class="button button-secondary" style="display:none;margin-left:8px;"><?php esc_html_e( 'Stop', 'rankready' ); ?></button>
+						<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Skips posts with unchanged content. Resume picks up from where you stopped.', 'rankready' ); ?></p>
 					</td>
 				</tr>
 			</table>
@@ -1250,6 +1584,100 @@ class RR_Admin {
 					<div id="rr-faq-bulk-bar" class="rr-progress-fill"></div>
 				</div>
 				<p id="rr-faq-bulk-status" class="rr-progress-label"><?php esc_html_e( 'Preparing...', 'rankready' ); ?></p>
+			</div>
+		</div>
+
+		<!-- Content Freshness Alerts -->
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Content Freshness Alerts', 'rankready' ); ?></h2>
+			<p class="rr-card-desc">
+				<?php esc_html_e( 'AI search engines strongly prefer fresh content. 65% of AI citations target content updated within the past year. Find stale posts that may be losing AI visibility.', 'rankready' ); ?>
+			</p>
+			<table class="form-table rr-form-table" style="width:auto;">
+				<tr>
+					<th style="padding:10px 20px 10px 0;">
+						<label for="rr-freshness-days"><?php esc_html_e( 'Stale Threshold', 'rankready' ); ?></label>
+					</th>
+					<td>
+						<select id="rr-freshness-days">
+							<option value="60"><?php esc_html_e( '60 days', 'rankready' ); ?></option>
+							<option value="90" selected><?php esc_html_e( '90 days (recommended)', 'rankready' ); ?></option>
+							<option value="180"><?php esc_html_e( '180 days', 'rankready' ); ?></option>
+							<option value="365"><?php esc_html_e( '1 year', 'rankready' ); ?></option>
+						</select>
+					</td>
+				</tr>
+				<tr>
+					<th></th>
+					<td>
+						<button type="button" id="rr-freshness-scan" class="button button-primary"><?php esc_html_e( 'Scan Content Freshness', 'rankready' ); ?></button>
+						<span id="rr-freshness-status" style="margin-left:10px;font-size:13px;display:none;"></span>
+					</td>
+				</tr>
+			</table>
+			<div id="rr-freshness-summary" style="display:none;margin-top:12px;"></div>
+			<div id="rr-freshness-results" style="display:none;margin-top:16px;max-height:500px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
+				<table class="widefat striped" style="margin:0;">
+					<thead>
+						<tr>
+							<th style="width:5%;"><?php esc_html_e( 'Urgency', 'rankready' ); ?></th>
+							<th><?php esc_html_e( 'Post', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'Type', 'rankready' ); ?></th>
+							<th style="width:12%;"><?php esc_html_e( 'Last Updated', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'Days Stale', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'Summary', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'FAQ', 'rankready' ); ?></th>
+							<th style="width:8%;"><?php esc_html_e( 'Actions', 'rankready' ); ?></th>
+						</tr>
+					</thead>
+					<tbody id="rr-freshness-tbody"></tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Health Check -->
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Health Check', 'rankready' ); ?></h2>
+			<p class="rr-card-desc"><?php esc_html_e( 'Run a diagnostic scan to verify all RankReady features are configured and working correctly.', 'rankready' ); ?></p>
+			<p>
+				<button type="button" id="rr-health-check" class="button button-primary"><?php esc_html_e( 'Run Health Check', 'rankready' ); ?></button>
+				<span id="rr-health-status" style="margin-left:10px;font-size:13px;display:none;"></span>
+			</p>
+			<div id="rr-health-results" style="display:none;margin-top:16px;">
+				<table class="widefat" style="margin:0;">
+					<thead>
+						<tr>
+							<th style="width:5%;"></th>
+							<th style="width:30%;"><?php esc_html_e( 'Check', 'rankready' ); ?></th>
+							<th><?php esc_html_e( 'Result', 'rankready' ); ?></th>
+						</tr>
+					</thead>
+					<tbody id="rr-health-tbody"></tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Error Log -->
+		<div class="rr-card">
+			<h2 class="rr-card-title"><?php esc_html_e( 'Error Log', 'rankready' ); ?></h2>
+			<p class="rr-card-desc"><?php esc_html_e( 'Recent API errors from OpenAI and DataForSEO. Shows the last 50 entries.', 'rankready' ); ?></p>
+			<p>
+				<button type="button" id="rr-errors-load" class="button button-secondary"><?php esc_html_e( 'Load Error Log', 'rankready' ); ?></button>
+				<button type="button" id="rr-errors-clear" class="button" style="margin-left:8px;"><?php esc_html_e( 'Clear Log', 'rankready' ); ?></button>
+				<span id="rr-errors-status" style="margin-left:10px;font-size:13px;display:none;"></span>
+			</p>
+			<div id="rr-errors-list" style="display:none;margin-top:16px;max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
+				<table class="widefat striped" style="margin:0;">
+					<thead>
+						<tr>
+							<th style="width:15%;"><?php esc_html_e( 'When', 'rankready' ); ?></th>
+							<th style="width:12%;"><?php esc_html_e( 'Source', 'rankready' ); ?></th>
+							<th><?php esc_html_e( 'Error', 'rankready' ); ?></th>
+							<th style="width:10%;"><?php esc_html_e( 'Post', 'rankready' ); ?></th>
+						</tr>
+					</thead>
+					<tbody id="rr-errors-tbody"></tbody>
+				</table>
 			</div>
 		</div>
 		<?php
@@ -1426,7 +1854,7 @@ class RR_Admin {
 	private static function test_connection_url(): string {
 		return add_query_arg( array(
 			'page'           => self::MENU_SLUG,
-			'tab'            => 'settings',
+			'tab'            => 'api',
 			self::NONCE_FIELD => wp_create_nonce( self::NONCE_ACTION ),
 			'rr_action'      => 'test',
 		), admin_url( 'admin.php' ) );
@@ -1469,6 +1897,45 @@ class RR_Admin {
 			. '</a>';
 		array_unshift( $links, $settings_link );
 		return $links;
+	}
+
+	// ── Post list status column ───────────────────────────────────────────
+
+	public static function add_status_column( array $columns ): array {
+		$columns['rr_status'] = __( 'RankReady', 'rankready' );
+		return $columns;
+	}
+
+	public static function render_status_column( string $column, int $post_id ): void {
+		if ( 'rr_status' !== $column ) {
+			return;
+		}
+
+		$summary   = get_post_meta( $post_id, RR_META_SUMMARY, true );
+		$faq       = get_post_meta( $post_id, RR_META_FAQ, true );
+		$disabled  = get_post_meta( $post_id, RR_META_DISABLE, true );
+		$faq_off   = get_post_meta( $post_id, RR_META_FAQ_DISABLE, true );
+
+		$parts = array();
+
+		if ( $disabled ) {
+			$parts[] = '<span style="color:#d63638;" title="' . esc_attr__( 'Summary disabled', 'rankready' ) . '">S: off</span>';
+		} elseif ( ! empty( $summary ) ) {
+			$parts[] = '<span style="color:#00a32a;" title="' . esc_attr__( 'Summary generated', 'rankready' ) . '">S: &#10003;</span>';
+		} else {
+			$parts[] = '<span style="color:#999;" title="' . esc_attr__( 'No summary', 'rankready' ) . '">S: —</span>';
+		}
+
+		if ( $faq_off ) {
+			$parts[] = '<span style="color:#d63638;" title="' . esc_attr__( 'FAQ disabled', 'rankready' ) . '">F: off</span>';
+		} elseif ( ! empty( $faq ) ) {
+			$parts[] = '<span style="color:#00a32a;" title="' . esc_attr__( 'FAQ generated', 'rankready' ) . '">F: &#10003;</span>';
+		} else {
+			$parts[] = '<span style="color:#999;" title="' . esc_attr__( 'No FAQ', 'rankready' ) . '">F: —</span>';
+		}
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- all values escaped above
+		echo implode( ' &nbsp; ', $parts );
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────

@@ -19,8 +19,21 @@ class RR_Generator {
 
 	// ── Trigger ───────────────────────────────────────────────────────────────
 
+	/** Guard against re-entrant calls from wp_update_post inside generators. */
+	public static $generating = false;
+
 	public static function schedule_generation( $post_id, $post, $update, $post_before ): void {
 		$post_id = (int) $post_id;
+
+		// Block re-entrant calls (FAQ generate_faq calls wp_update_post which re-fires this).
+		if ( self::$generating ) {
+			return;
+		}
+
+		// Auto-generate toggle: if off, only generate via manual/bulk actions.
+		if ( 'on' !== get_option( RR_OPT_AUTO_GENERATE, 'off' ) ) {
+			return;
+		}
 
 		if ( 'publish' !== $post->post_status ) {
 			return;
@@ -40,9 +53,9 @@ class RR_Generator {
 			}
 		}
 
-		// Check post type is enabled
-		$enabled_types = (array) get_option( RR_OPT_POST_TYPES, array( 'post' ) );
-		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+		// Only run for public post types (skip attachments, nav_menu_item, etc.).
+		$public_types = get_post_types( array( 'public' => true ), 'names' );
+		if ( ! isset( $public_types[ $post->post_type ] ) || 'attachment' === $post->post_type ) {
 			return;
 		}
 
@@ -67,41 +80,34 @@ class RR_Generator {
 
 		update_post_meta( $post_id, RR_META_HASH, $new_hash );
 
-		// Strategy 1: fastcgi_finish_request (RunCloud/nginx/PHP-FPM)
-		register_shutdown_function( function () use ( $post_id, $new_hash ) {
-			if ( (string) get_post_meta( $post_id, RR_META_HASH, true ) !== $new_hash ) {
-				return;
-			}
-			if ( function_exists( 'fastcgi_finish_request' ) ) {
-				fastcgi_finish_request();
-			}
-			RR_Generator::run_generation_direct( $post_id );
-		} );
-
-		// Strategy 2: WP-Cron fallback
-		if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-			wp_clear_scheduled_hook( RR_CRON_HOOK, array( $post_id ) );
-			wp_schedule_single_event( time() + 10, RR_CRON_HOOK, array( $post_id ) );
-			spawn_cron();
-		}
+		// Use WP-Cron only (single path, no double-fire).
+		wp_clear_scheduled_hook( RR_CRON_HOOK, array( $post_id ) );
+		wp_schedule_single_event( time() + 5, RR_CRON_HOOK, array( $post_id ) );
+		spawn_cron();
 	}
 
 	// ── Direct runner (fastcgi path) ──────────────────────────────────────────
 
 	public static function run_generation_direct( $post_id ): void {
 		$post_id = (int) $post_id;
-		$last    = (int) get_post_meta( $post_id, RR_META_GENERATED, true );
+
+		self::$generating = true;
+
+		$last = (int) get_post_meta( $post_id, RR_META_GENERATED, true );
 		if ( $last && ( time() - $last ) < self::MIN_INTERVAL ) {
+			self::$generating = false;
 			return;
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post ) {
+			self::$generating = false;
 			return;
 		}
 
 		$api_key = (string) get_option( RR_OPT_KEY, '' );
 		if ( empty( $api_key ) ) {
+			self::$generating = false;
 			return;
 		}
 
@@ -112,29 +118,37 @@ class RR_Generator {
 			update_post_meta( $post_id, RR_META_SUMMARY,   $result );
 			update_post_meta( $post_id, RR_META_GENERATED, time() );
 		}
+
+		self::$generating = false;
 	}
 
 	// ── WP-Cron runner (fallback) ─────────────────────────────────────────────
 
 	public static function run_generation( $post_id ): void {
+		self::$generating = true;
+
 		$post_id = (int) $post_id;
 		$post    = get_post( $post_id );
 		if ( ! $post || 'publish' !== $post->post_status ) {
+			self::$generating = false;
 			return;
 		}
 
 		// Per-post disable check
 		if ( get_post_meta( $post_id, RR_META_DISABLE, true ) ) {
+			self::$generating = false;
 			return;
 		}
 
 		$api_key = (string) get_option( RR_OPT_KEY, '' );
 		if ( empty( $api_key ) ) {
+			self::$generating = false;
 			return;
 		}
 
 		$last = (int) get_post_meta( $post_id, RR_META_GENERATED, true );
 		if ( $last && ( time() - $last ) < self::MIN_INTERVAL ) {
+			self::$generating = false;
 			return;
 		}
 
@@ -145,11 +159,20 @@ class RR_Generator {
 			update_post_meta( $post_id, RR_META_SUMMARY,   $result );
 			update_post_meta( $post_id, RR_META_GENERATED, time() );
 		}
+
+		self::$generating = false;
 	}
 
 	// ── Force generation (REST) ───────────────────────────────────────────────
 
-	public static function force_generate( $post_id ) {
+	/**
+	 * Force-generate summary for a post.
+	 *
+	 * @param int  $post_id       Post ID.
+	 * @param bool $skip_unchanged When true, skip if content hash matches (token saver).
+	 * @return string|false Generated summary or false on failure.
+	 */
+	public static function force_generate( $post_id, $skip_unchanged = false ) {
 		$post_id = (int) $post_id;
 		$post    = get_post( $post_id );
 		if ( ! $post ) {
@@ -161,12 +184,23 @@ class RR_Generator {
 			return false;
 		}
 
-		$content = self::get_content_string( $post );
-		$result  = self::call_openai( $content, $post, $api_key );
+		$content  = self::get_content_string( $post );
+		$new_hash = md5( $content );
+
+		// Skip if content unchanged and summary already exists.
+		if ( $skip_unchanged ) {
+			$old_hash = (string) get_post_meta( $post_id, RR_META_HASH, true );
+			$existing = (string) get_post_meta( $post_id, RR_META_SUMMARY, true );
+			if ( $new_hash === $old_hash && ! empty( $existing ) ) {
+				return $existing; // Return existing without API call.
+			}
+		}
+
+		$result = self::call_openai( $content, $post, $api_key );
 
 		if ( $result ) {
 			update_post_meta( $post_id, RR_META_SUMMARY,   $result );
-			update_post_meta( $post_id, RR_META_HASH,      md5( $content ) );
+			update_post_meta( $post_id, RR_META_HASH,      $new_hash );
 			update_post_meta( $post_id, RR_META_GENERATED, time() );
 		}
 
@@ -190,25 +224,45 @@ class RR_Generator {
 
 		$content = mb_substr( $content, 0, 12000 );
 
-		$system_prompt = 'You are a technical blog editor. You write precise, factual bullet-point summaries for blog posts. Your bullets are read by humans and indexed by AI search engines. Every bullet must contain specific named entities from the content.';
+		$system_prompt  = "You extract key takeaways from blog posts. You produce factual, entity-rich bullet points.\n\n";
+		$system_prompt .= "ABSOLUTE RULES:\n";
+		$system_prompt .= "- You may ONLY state facts that appear word-for-word or are directly implied by the blog post text below.\n";
+		$system_prompt .= "- NEVER add features, tools, integrations, platforms, pricing, or claims the post does not mention.\n";
+		$system_prompt .= "- NEVER say a product works with a platform unless the post explicitly says so.\n";
+		$system_prompt .= "- If you are unsure whether something is true, leave it out.\n";
+		$system_prompt .= "- Use the exact product names, brand names, and version numbers from the post. No renaming, no generalizing.\n";
+		$system_prompt .= "- No em dashes. No filler words (certainly, indeed, comprehensive, robust, leverage, utilize). No promotional language.";
 
-		// Append custom prompt if set
+		// Inject product context if set (shared across summary + FAQ).
+		$product_context = (string) get_option( RR_OPT_PRODUCT_CONTEXT, '' );
+		if ( ! empty( $product_context ) ) {
+			$system_prompt .= "\n\nPRODUCT CONTEXT (use this as a fact-check reference — never contradict this, never add details beyond this):\n" . $product_context;
+		}
+
+		// Append custom prompt if set.
 		$custom_prompt = (string) get_option( RR_OPT_CUSTOM_PROMPT, '' );
 		if ( ! empty( $custom_prompt ) ) {
-			$system_prompt .= "\n\nAdditional instructions: " . $custom_prompt;
+			$system_prompt .= "\n\nAdditional instructions:\n" . $custom_prompt;
 		}
 
 		$user_prompt = sprintf(
-			'Summarize the blog post below as exactly %d bullet points.
+			'Extract exactly %d key takeaways from the blog post below.
 
-Rules (follow strictly):
-1. Each bullet = one complete, specific insight from the post.
-2. Include named entities: product names, feature names, version numbers, tool names.
-3. Each bullet starts with a key noun or strong action verb (not "You can", "This", "Learn", "Find out").
-4. No filler: no "In this post", "Comprehensive guide", "Dive into".
-5. Write in present tense, third-person perspective.
-6. Bullets should be scannable in under 3 seconds each.
-7. Return ONLY valid JSON: {"bullets":["Bullet 1.","Bullet 2.","Bullet 3."]}
+Each takeaway must:
+- Be one specific, valuable insight a reader would remember
+- Start with a named entity (product name, feature name, tool name) or a strong action verb
+- Contain at least one specific detail: a name, number, feature, or outcome
+- Be factually accurate to the blog post — zero invention
+- Be written in present tense, third person
+- Be scannable in under 3 seconds
+
+Do NOT:
+- Start with "You can", "This post", "Learn how", "Find out", "Discover"
+- Include vague takeaways like "improves performance" without specifics
+- Mention any tool, platform, or integration the post does not explicitly discuss
+- Repeat the same point in different words
+
+Return ONLY valid JSON: {"bullets":["Takeaway 1.","Takeaway 2.","Takeaway 3."]}
 
 Blog Post:
 %s',
@@ -237,22 +291,23 @@ Blog Post:
 		) );
 
 		if ( is_wp_error( $response ) ) {
-			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-				error_log( '[RankReady] OpenAI error: ' . $response->get_error_message() );
-			}
+			self::log_error( 'OpenAI', $response->get_error_message(), $post->ID );
 			return false;
 		}
 
 		$http_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $http_code ) {
-			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-				error_log( '[RankReady] OpenAI HTTP ' . $http_code . ': ' . wp_remote_retrieve_body( $response ) );
-			}
+			self::log_error( 'OpenAI', 'HTTP ' . $http_code . ': ' . wp_remote_retrieve_body( $response ), $post->ID );
 			return false;
 		}
 
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 		$raw  = isset( $body['choices'][0]['message']['content'] ) ? trim( $body['choices'][0]['message']['content'] ) : '';
+
+		// Track token usage.
+		if ( isset( $body['usage']['total_tokens'] ) ) {
+			self::track_tokens( (int) $body['usage']['total_tokens'], $post->ID, 'summary' );
+		}
 
 		if ( empty( $raw ) ) {
 			return false;
@@ -260,9 +315,7 @@ Blog Post:
 
 		$decoded = json_decode( $raw, true );
 		if ( ! is_array( $decoded ) || empty( $decoded['bullets'] ) || ! is_array( $decoded['bullets'] ) ) {
-			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-				error_log( '[RankReady] Unexpected JSON structure: ' . $raw );
-			}
+			self::log_error( 'OpenAI', 'Unexpected JSON structure: ' . mb_substr( $raw, 0, 200 ), $post->ID );
 			return false;
 		}
 
@@ -327,5 +380,58 @@ Blog Post:
 		}
 
 		return array( 'type' => 'text', 'data' => $raw );
+	}
+
+	// ── Error logging ────────────────────────────────────────────────────────
+
+	public static function log_error( string $source, string $message, int $post_id = 0 ): void {
+		$log = (array) get_option( 'rr_error_log', array() );
+
+		$log[] = array(
+			'time'    => time(),
+			'source'  => $source,
+			'message' => mb_substr( $message, 0, 500 ),
+			'post_id' => $post_id,
+		);
+
+		// Keep last 50 entries.
+		if ( count( $log ) > 50 ) {
+			$log = array_slice( $log, -50 );
+		}
+
+		update_option( 'rr_error_log', $log, false );
+	}
+
+	public static function get_error_log(): array {
+		return (array) get_option( 'rr_error_log', array() );
+	}
+
+	public static function clear_error_log(): void {
+		delete_option( 'rr_error_log' );
+	}
+
+	// ── Token tracking ───────────────────────────────────────────────────────
+
+	public static function track_tokens( int $tokens, int $post_id, string $type ): void {
+		// Per-post tracking.
+		$meta_key = '_rr_tokens_used';
+		$current  = (int) get_post_meta( $post_id, $meta_key, true );
+		update_post_meta( $post_id, $meta_key, $current + $tokens );
+
+		// Global cumulative tracking.
+		$totals = (array) get_option( 'rr_token_usage', array(
+			'summary_tokens' => 0,
+			'faq_tokens'     => 0,
+			'total_calls'    => 0,
+		) );
+
+		if ( 'summary' === $type ) {
+			$totals['summary_tokens'] = ( isset( $totals['summary_tokens'] ) ? (int) $totals['summary_tokens'] : 0 ) + $tokens;
+		} else {
+			$totals['faq_tokens'] = ( isset( $totals['faq_tokens'] ) ? (int) $totals['faq_tokens'] : 0 ) + $tokens;
+		}
+		$totals['total_calls'] = ( isset( $totals['total_calls'] ) ? (int) $totals['total_calls'] : 0 ) + 1;
+
+		update_option( 'rr_token_usage', $totals, false );
 	}
 }

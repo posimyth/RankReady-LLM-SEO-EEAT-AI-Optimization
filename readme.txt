@@ -4,7 +4,7 @@ Tags: llm seo, ai summary, schema markup, llms.txt, eeat
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.5.0
+Stable tag: 1.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,6 +35,102 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 5. Configure LLMs.txt and Markdown in the LLM Optimization tab.
 
 == Changelog ==
+
+= 1.2 =
+* New: Content Freshness Alerts — scan for stale posts losing AI visibility (65% of AI citations target content < 1 year old)
+* New: Expanded AI crawler list — 31 bots (was 22) including anthropic-ai, GoogleOther, Meta-ExternalFetcher, MistralAI-User, PetalBot, Omgilibot, Brightbot, magpie-crawler, DataForSeoBot
+* New: Freshness summary dashboard with fresh percentage, stale count, urgency levels (critical/high/moderate)
+* Fix: PHP 8.0+ fatal error — generate_faq() declared `: array` return type but returned WP_Error on failure paths
+* Fix: flush_rewrite_rules() moved from plugins_loaded to init hook (prevents corrupting other plugins' rewrite rules)
+* Fix: FAQ OpenAI call now uses response_format json_object (prevents parse failures from markdown-wrapped JSON)
+* Fix: llms-full.txt uses strip_shortcodes() instead of do_shortcode() (prevents expensive shortcode execution during bulk generation)
+* Fix: Markdown endpoints now cached via transients (5 min TTL, keyed by post_modified) — prevents repeated content processing on bot crawls
+
+= 0.4.6 =
+* Security: Health check no longer exposes API key prefix in diagnostic output
+* Security: DataForSEO verify endpoint no longer leaks login email or debug info in responses
+* Security: All SQL queries in health check and migration use $wpdb->prepare() with positional placeholders
+* Security: verify-dfs REST route now has sanitize_callback on all parameters
+* Security: Multisite guard added to physical robots.txt sync — skips when is_multisite()
+* Fix: get_term_link() return values checked for WP_Error before use in JSON-LD schema
+* Fix: FAQ OpenAI call now checks HTTP status code before processing response (matches summary generator behavior)
+* Fix: APS migration now runs only once via rr_aps_migrated flag instead of re-running on every version bump
+
+= 0.4.5 =
+* Fix: about (categories) and mentions (tags) schema now use get_object_taxonomies() — works with ALL custom post types and their custom taxonomies, not just default category/post_tag
+* Fix: Hierarchical taxonomies (categories, blog-category, product_cat, etc.) map to about entities
+* Fix: Non-hierarchical taxonomies (tags, blog-tag, product_tag, etc.) map to mentions entities
+
+= 0.4.4 =
+* New: Health Check diagnostic tool in Tools tab — scans all settings, API keys, coverage stats, rewrite rules, errors
+* New: DataForSEO usage tracking — API calls and cost displayed alongside OpenAI usage in Tools tab
+* New: Resume button for Start Over bulk operation — stop and pick up where you left off
+* New: Start Over Stop now preserves queue for resume instead of clearing it
+* Enhancement: API Usage card now shows both OpenAI and DataForSEO costs side by side
+
+= 0.4.3 =
+* New: Full SEO plugin compatibility — merges AI schema into Rank Math, Yoast, AIOSEO, SEOPress, The SEO Framework, and Slim SEO
+* New: abstract property — Key Takeaways text as machine-readable summary for AI citation
+* New: lastReviewed property — FAQ review date as freshness/trust signal
+* New: reviewedBy property — post author as E-E-A-T signal with bio excerpt
+* New: significantLink property — auto-extracted internal links from post content
+* New: citation property — auto-extracted external links as CreativeWork references for AI fact-checking chains
+* New: accessibilityFeature property — detects TOC, structural navigation (H2/H3), alt text, and long description
+* New: hasPart now includes both Key Takeaways and FAQ sections as extractable WebPageElements
+* New: rankready_ai_schema_properties filter for developers to extend AI properties
+* Enhancement: All properties are dynamic — extracted from actual post content, categories, tags, and meta
+
+= 0.4.2 =
+* New: Speakable schema now merges into Rank Math's Article/BlogPosting via rank_math/json_ld filter — no longer skipped
+* New: Speakable schema merges into Yoast's Article schema via wpseo_schema_graph filter
+* New: hasPart WebPageElement — marks Key Takeaways as a structured section LLMs can extract directly
+* New: about entities from categories — gives AI topic-level comprehension signals
+* New: mentions entities from tags — secondary entity signals for AI Overviews
+* New: SpeakableSpecification now includes .rr-faq-wrapper selector for voice search on FAQ content
+
+= 0.4.1 =
+* Fix: Theme builder detection rewritten — uses did_action('elementor/theme/before_do_single') for reliable detection when blog posts use Elementor Pro theme builder templates
+* Fix: Nexter Theme Builder detection added — auto-display skips when Nexter single template is active
+* Fix: Frontend styles now load reliably on theme builder pages (uses get_queried_object_id instead of get_the_ID)
+* Fix: Auto-display no longer injects Key Takeaways or FAQ via the_content when a theme builder widget handles display
+* New: Start Over is now a bulk operation — select post types and regenerate all Key Takeaways + FAQ from scratch with progress bar
+* New: Start Over ignores auto-generate setting — always regenerates regardless of toggle
+* New: Bulk Start Over REST endpoints (startover-bulk/start, process, stop)
+
+= 0.4 =
+* New: Product Context setting — describe your product/brand so AI never hallucinates wrong features or compatibility claims
+* New: Auto-Generate toggle (default OFF) — summaries only generate via manual Regenerate, block, or Bulk. No surprise token usage on publish
+* New: Estimated cost display (GPT-4o-mini pricing) above token usage in Tools tab
+* Fix: Complete prompt rewrite for Key Takeaways — entity-rich, zero-hallucination, specific insights only
+* Fix: Complete prompt rewrite for FAQ — strict fact-checking rules, no invented features/integrations/compatibility
+* Fix: Product context injected into BOTH Key Takeaways and FAQ prompts — AI now respects brand facts
+* Fix: Custom Prompt now applied to FAQ generation (was only used for summaries)
+* Fix: FAQ questions no longer repeat — semantic deduplication removes near-duplicate PAA questions
+* Fix: DFS questions sorted by search volume — most popular People Also Ask questions used first
+* Fix: DFS fetches increased to 30 suggestions + 20 related for better question discovery
+* Fix: FAQ temperature lowered from 0.7 to 0.5 for more factual, less creative answers
+
+= 4.0.0 =
+* CRITICAL FIX: Eliminated token burn loop — summary was double-firing via shutdown + cron on every publish
+* CRITICAL FIX: FAQ wp_update_post() was re-triggering summary generation in an infinite chain
+* CRITICAL FIX: Removed auto-FAQ-on-publish (was firing DataForSEO + OpenAI on every post save across all CPTs)
+* Fix: Added re-entrancy guard ($generating flag) to block wp_update_post from re-triggering hooks
+* Fix: Summary now uses cron-only path (no more shutdown + cron double-fire)
+* Fix: Migration now handles posts with empty _rr_summary that blocked _aps_summary migration
+* FAQ generation remains manual (Gutenberg block, Elementor widget) and bulk (Tools tab)
+
+= 2.5.3 =
+* Fix: Summary auto-display, FAQ auto-display, and schema injection now work on ALL public CPTs (not just selected ones)
+* Fix: Removed all post type settings gates from generation, display, and schema — everything runs on all public CPTs
+* New: DataForSEO Verify button with balance check and debug info on failure
+
+= 2.5.2 =
+* New: Auto-migrate summaries from AI Post Summary plugin (preserves all existing generated content)
+* New: Per-post token usage tracking with detailed breakdown table in Tools tab
+* New: Bulk operation live activity log — shows post title, link, status, and tokens used per item
+* New: RankReady status column on ALL public post types (not just enabled ones)
+* Fix: FAQ generation cooldown now returns proper WP_Error for consistent error handling
+* Fix: Status column registration uses get_post_types() for custom post types like Blog
 
 = 2.5.0 =
 * New: FAQ Generator — auto-generate FAQ Q&A pairs using DataForSEO keyword research + OpenAI with brand entity injection

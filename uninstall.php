@@ -19,6 +19,8 @@ $options = array(
 	'rr_auto_display',
 	'rr_display_position',
 	'rr_custom_prompt',
+	'rr_product_context',
+	'rr_auto_generate',
 	// Bulk summary state.
 	'rr_bulk_queue',
 	'rr_bulk_done',
@@ -65,8 +67,26 @@ $options = array(
 	'rr_faq_done',
 	'rr_faq_total',
 	'rr_faq_running',
+	// Bulk start-over state.
+	'rr_so_queue',
+	'rr_so_done',
+	'rr_so_total',
+	'rr_so_running',
+	// Bulk operation tracking.
+	'rr_bulk_skipped',
+	'rr_bulk_failed',
+	'rr_faq_skipped',
+	'rr_faq_failed',
+	// Error log.
+	'rr_error_log',
+	// Token usage.
+	'rr_token_usage',
+	// DataForSEO usage.
+	'rr_dfs_usage',
 	// Version tracking.
 	'rr_installed_version',
+	// Migration flag.
+	'rr_aps_migrated',
 );
 
 foreach ( $options as $option ) {
@@ -90,6 +110,7 @@ $meta_keys = array(
 	'_rr_faq_generated',
 	'_rr_faq_disable',
 	'_rr_faq_keyword',
+	'_rr_tokens_used',
 );
 
 foreach ( $meta_keys as $key ) {
@@ -98,6 +119,7 @@ foreach ( $meta_keys as $key ) {
 
 // ── Clear scheduled cron ──────────────────────────────────────────────────────
 wp_clear_scheduled_hook( 'rr_async_generate' );
+wp_clear_scheduled_hook( 'rr_async_faq_generate' );
 
 // ── Flush rewrite rules to clean up llms.txt and .md endpoints ───────────────
 flush_rewrite_rules( false );

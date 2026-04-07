@@ -25,6 +25,86 @@ class RR_Faq {
 
 		// Inject FAQPage schema into wp_head.
 		add_action( 'wp_head', array( self::class, 'inject_faq_schema' ), 20 );
+
+		// FAQ cron runner (used by bulk and manual triggers only — no auto-generate on publish).
+		add_action( 'rr_async_faq_generate', array( self::class, 'run_faq_generation' ) );
+	}
+
+	// ── Auto-generate FAQ on publish ─────────────────────────────────────────
+
+	public static function schedule_faq_generation( $post_id, $post, $update, $post_before ): void {
+		$post_id = (int) $post_id;
+
+		if ( 'publish' !== $post->post_status ) {
+			return;
+		}
+		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+			return;
+		}
+		if ( wp_is_post_revision( $post_id ) ) {
+			return;
+		}
+
+		// REST API autosave check (Gutenberg).
+		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			$route = isset( $GLOBALS['wp']->query_vars['rest_route'] ) ? $GLOBALS['wp']->query_vars['rest_route'] : '';
+			if ( false !== strpos( $route, '/autosaves' ) ) {
+				return;
+			}
+		}
+
+		// Only run for public post types.
+		$public_types = get_post_types( array( 'public' => true ), 'names' );
+		if ( ! isset( $public_types[ $post->post_type ] ) || 'attachment' === $post->post_type ) {
+			return;
+		}
+
+		// Per-post disable.
+		if ( get_post_meta( $post_id, RR_META_FAQ_DISABLE, true ) ) {
+			return;
+		}
+
+		// Need both API keys.
+		if ( empty( get_option( RR_OPT_KEY ) ) || empty( get_option( RR_OPT_DFS_LOGIN ) ) || empty( get_option( RR_OPT_DFS_PASSWORD ) ) ) {
+			return;
+		}
+
+		// Hash check: only call API if content changed.
+		$content  = wp_strip_all_tags( do_shortcode( $post->post_content ) );
+		$keyword  = self::get_focus_keyword( $post_id );
+		$count    = (int) get_option( RR_OPT_FAQ_COUNT, 5 );
+		$new_hash = md5( $content . $keyword . $count );
+		$old_hash = (string) get_post_meta( $post_id, RR_META_FAQ_HASH, true );
+
+		if ( $new_hash === $old_hash && ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) ) ) {
+			return;
+		}
+
+		// Schedule via cron (FAQ takes longer due to DataForSEO + OpenAI calls).
+		wp_clear_scheduled_hook( 'rr_async_faq_generate', array( $post_id ) );
+		wp_schedule_single_event( time() + 15, 'rr_async_faq_generate', array( $post_id ) );
+		spawn_cron();
+	}
+
+	public static function run_faq_generation( $post_id ): void {
+		$post_id = (int) $post_id;
+		$post    = get_post( $post_id );
+		if ( ! $post || 'publish' !== $post->post_status ) {
+			return;
+		}
+
+		// Per-post disable check.
+		if ( get_post_meta( $post_id, RR_META_FAQ_DISABLE, true ) ) {
+			return;
+		}
+
+		// Rate limit: don't re-generate if done very recently.
+		$last = (int) get_post_meta( $post_id, RR_META_FAQ_GENERATED, true );
+		if ( $last && ( time() - $last ) < 60 ) {
+			return;
+		}
+
+		self::generate_faq( $post_id );
 	}
 
 	// ── Auto-display ─────────────────────────────────────────────────────────
@@ -46,14 +126,18 @@ class RR_Faq {
 			return $content;
 		}
 
-		// Check post type.
-		$enabled_types = (array) get_option( RR_OPT_FAQ_POST_TYPES, array( 'post' ) );
-		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+		// Check post type — all public CPTs.
+		if ( ! is_post_type_viewable( $post->post_type ) ) {
 			return $content;
 		}
 
 		// Per-post disable.
 		if ( get_post_meta( $post->ID, RR_META_FAQ_DISABLE, true ) ) {
+			return $content;
+		}
+
+		// Skip if a theme builder renders this page — display is handled by the widget.
+		if ( class_exists( 'RR_Block' ) && RR_Block::is_theme_builder_page( $post->ID ) ) {
 			return $content;
 		}
 
@@ -108,7 +192,7 @@ class RR_Faq {
 			$html .= '<div class="rr-faq-item" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">';
 			$html .= '<h4 class="rr-faq-question" itemprop="name">' . esc_html( $q ) . '</h4>';
 			$html .= '<div class="rr-faq-answer" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer">';
-			$html .= '<div itemprop="text">' . wp_kses_post( $a ) . '</div>';
+			$html .= '<div itemprop="text">' . wp_kses_post( self::convert_markdown_links( $a ) ) . '</div>';
 			$html .= '</div>';
 			$html .= '</div>';
 		}
@@ -152,9 +236,8 @@ class RR_Faq {
 			return;
 		}
 
-		// Check post type is enabled.
-		$enabled_types = (array) get_option( RR_OPT_FAQ_POST_TYPES, array( 'post' ) );
-		if ( ! in_array( $post->post_type, $enabled_types, true ) ) {
+		// Check post type — all public CPTs.
+		if ( ! is_post_type_viewable( $post->post_type ) ) {
 			return;
 		}
 
@@ -253,21 +336,23 @@ class RR_Faq {
 			return array();
 		}
 
-		$questions = array();
+		// Collect questions with search volume for sorting.
+		$raw_questions = array(); // key = lowercase question, value = { keyword, volume }.
 
 		// Call 1: Keyword suggestions (question-type).
 		$suggestions = self::dfs_api_call(
 			'https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live',
 			array(
 				array(
-					'keyword'          => $keyword,
-					'language_code'    => 'en',
-					'location_code'    => 2840, // US
+					'keyword'              => $keyword,
+					'language_code'        => 'en',
+					'location_code'        => 2840, // US
 					'include_seed_keyword' => true,
-					'limit'            => 20,
-					'filters'          => array(
+					'limit'                => 30,
+					'filters'              => array(
 						array( 'keyword_data.keyword_info.search_volume', '>', 0 ),
 					),
+					'order_by'             => array( 'keyword_data.keyword_info.search_volume,desc' ),
 				),
 			),
 			$login,
@@ -276,10 +361,13 @@ class RR_Faq {
 
 		if ( ! empty( $suggestions ) ) {
 			foreach ( $suggestions as $item ) {
-				$kw = isset( $item['keyword_data']['keyword'] ) ? $item['keyword_data']['keyword'] : '';
-				// Prioritize question-format keywords.
+				$kw     = isset( $item['keyword_data']['keyword'] ) ? $item['keyword_data']['keyword'] : '';
+				$volume = isset( $item['keyword_data']['keyword_info']['search_volume'] ) ? (int) $item['keyword_data']['keyword_info']['search_volume'] : 0;
 				if ( ! empty( $kw ) && preg_match( '/^(how|what|why|when|where|which|can|does|is|are|do|should|will)\b/i', $kw ) ) {
-					$questions[] = $kw;
+					$key = strtolower( trim( $kw ) );
+					if ( ! isset( $raw_questions[ $key ] ) || $volume > $raw_questions[ $key ]['volume'] ) {
+						$raw_questions[ $key ] = array( 'keyword' => $kw, 'volume' => $volume );
+					}
 				}
 			}
 		}
@@ -292,7 +380,7 @@ class RR_Faq {
 					'keyword'       => $keyword,
 					'language_code' => 'en',
 					'location_code' => 2840,
-					'limit'         => 15,
+					'limit'         => 20,
 				),
 			),
 			$login,
@@ -301,17 +389,39 @@ class RR_Faq {
 
 		if ( ! empty( $related ) ) {
 			foreach ( $related as $item ) {
-				$kw = isset( $item['keyword_data']['keyword'] ) ? $item['keyword_data']['keyword'] : '';
+				$kw     = isset( $item['keyword_data']['keyword'] ) ? $item['keyword_data']['keyword'] : '';
+				$volume = isset( $item['keyword_data']['keyword_info']['search_volume'] ) ? (int) $item['keyword_data']['keyword_info']['search_volume'] : 0;
 				if ( ! empty( $kw ) && preg_match( '/^(how|what|why|when|where|which|can|does|is|are|do|should|will)\b/i', $kw ) ) {
-					if ( ! in_array( $kw, $questions, true ) ) {
-						$questions[] = $kw;
+					$key = strtolower( trim( $kw ) );
+					if ( ! isset( $raw_questions[ $key ] ) || $volume > $raw_questions[ $key ]['volume'] ) {
+						$raw_questions[ $key ] = array( 'keyword' => $kw, 'volume' => $volume );
 					}
 				}
 			}
 		}
 
-		// Limit to top 15 questions.
-		return array_slice( $questions, 0, 15 );
+		// Sort by search volume descending so the most popular PAA questions come first.
+		uasort( $raw_questions, function ( $a, $b ) {
+			return $b['volume'] - $a['volume'];
+		} );
+
+		// Deduplicate semantically similar questions (same core minus stop words).
+		$seen_cores = array();
+		$questions  = array();
+		foreach ( $raw_questions as $entry ) {
+			$core = preg_replace( '/\b(how|what|why|when|where|which|can|does|is|are|do|should|will|to|the|a|an|of|for|in|on|with|and|or|my|your|i)\b/i', '', strtolower( $entry['keyword'] ) );
+			$core = preg_replace( '/\s+/', ' ', trim( $core ) );
+			if ( isset( $seen_cores[ $core ] ) ) {
+				continue;
+			}
+			$seen_cores[ $core ] = true;
+			$questions[] = $entry['keyword'];
+			if ( count( $questions ) >= 15 ) {
+				break;
+			}
+		}
+
+		return $questions;
 	}
 
 	/**
@@ -328,16 +438,45 @@ class RR_Faq {
 		) );
 
 		if ( is_wp_error( $response ) ) {
+			RR_Generator::log_error( 'DataForSEO', $response->get_error_message() );
 			return array();
 		}
 
-		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		$http_code = (int) wp_remote_retrieve_response_code( $response );
+		$body      = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 !== $http_code ) {
+			$err = isset( $body['status_message'] ) ? $body['status_message'] : 'HTTP ' . $http_code;
+			RR_Generator::log_error( 'DataForSEO', $err );
+		}
+
+		// Track DFS usage.
+		$dfs_cost = 0;
+		if ( isset( $body['cost'] ) ) {
+			$dfs_cost = (float) $body['cost'];
+		}
+		self::track_dfs_usage( $dfs_cost );
 
 		if ( empty( $body['tasks'][0]['result'][0]['items'] ) ) {
 			return array();
 		}
 
 		return $body['tasks'][0]['result'][0]['items'];
+	}
+
+	/**
+	 * Track DataForSEO API usage (calls + cost).
+	 */
+	private static function track_dfs_usage( float $cost ): void {
+		$usage = (array) get_option( 'rr_dfs_usage', array(
+			'total_calls' => 0,
+			'total_cost'  => 0,
+		) );
+
+		$usage['total_calls'] = ( isset( $usage['total_calls'] ) ? (int) $usage['total_calls'] : 0 ) + 1;
+		$usage['total_cost']  = ( isset( $usage['total_cost'] ) ? (float) $usage['total_cost'] : 0 ) + $cost;
+
+		update_option( 'rr_dfs_usage', $usage, false );
 	}
 
 	// ── OpenAI FAQ Generation ─────────────────────────────────────────────────
@@ -348,9 +487,9 @@ class RR_Faq {
 	 * @param int    $post_id  Post ID.
 	 * @param string $keyword  Focus keyword (optional, auto-detected from Rank Math/Yoast).
 	 * @param int    $count    Number of FAQs to generate (3-10).
-	 * @return array|WP_Error Array of {question, answer} or WP_Error.
+	 * @return array|\WP_Error Array of {question, answer} or WP_Error.
 	 */
-	public static function generate_faq( int $post_id, string $keyword = '', int $count = 0 ): array {
+	public static function generate_faq( int $post_id, string $keyword = '', int $count = 0 ) {
 		$post = get_post( $post_id );
 		if ( ! $post instanceof WP_Post ) {
 			return new \WP_Error( 'invalid_post', 'Post not found.' );
@@ -404,31 +543,67 @@ class RR_Faq {
 			return new \WP_Error( 'no_api_key', 'OpenAI API key not configured.' );
 		}
 
+		// Build system prompt with product context.
+		$faq_system  = "You write FAQ answers for web pages. You respond with valid JSON only.\n\n";
+		$faq_system .= "ABSOLUTE RULES:\n";
+		$faq_system .= "- Every answer must be based ONLY on facts stated in the page content provided. Zero invention.\n";
+		$faq_system .= "- NEVER claim a product works with a platform, tool, or builder unless the page explicitly says so.\n";
+		$faq_system .= "- NEVER add features, pricing, statistics, or compatibility details the page does not mention.\n";
+		$faq_system .= "- Use the exact product names, brand names, and terminology from the page. No renaming.\n";
+		$faq_system .= "- Write in simple, conversational tone matching how website copy reads.\n";
+		$faq_system .= "- No em dashes. No filler (certainly, indeed, it is worth noting, comprehensive, robust, leverage).\n";
+		$faq_system .= "- If the page content does not have enough info to answer a question, skip that question and pick another.";
+
+		$product_context = (string) get_option( RR_OPT_PRODUCT_CONTEXT, '' );
+		if ( ! empty( $product_context ) ) {
+			$faq_system .= "\n\nPRODUCT CONTEXT (fact-check reference — never contradict this, never add details beyond what the page says):\n" . $product_context;
+		}
+
+		$custom_prompt = (string) get_option( RR_OPT_CUSTOM_PROMPT, '' );
+		if ( ! empty( $custom_prompt ) ) {
+			$faq_system .= "\n\nAdditional instructions:\n" . $custom_prompt;
+		}
+
 		$response = wp_remote_post( 'https://api.openai.com/v1/chat/completions', array(
 			'headers' => array(
 				'Authorization' => 'Bearer ' . $api_key,
 				'Content-Type'  => 'application/json',
 			),
 			'body'    => wp_json_encode( array(
-				'model'       => $model,
-				'messages'    => array(
-					array( 'role' => 'system', 'content' => 'You are an FAQ content writer. Write in simple conversational tone. No em dashes. No filler phrases. No hallucination. Only state facts from the provided page content. Always respond with valid JSON only.' ),
+				'model'           => $model,
+				'messages'        => array(
+					array( 'role' => 'system', 'content' => $faq_system ),
 					array( 'role' => 'user',   'content' => $prompt ),
 				),
-				'temperature' => 0.7,
-				'max_tokens'  => 2000,
+				'response_format' => array( 'type' => 'json_object' ),
+				'temperature'     => 0.5,
+				'max_tokens'      => 2000,
 			) ),
 			'timeout' => 60,
 		) );
 
 		if ( is_wp_error( $response ) ) {
+			RR_Generator::log_error( 'FAQ/OpenAI', $response->get_error_message(), $post_id );
 			return $response;
 		}
 
-		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		$http_code = (int) wp_remote_retrieve_response_code( $response );
+		$body      = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 !== $http_code ) {
+			$err = isset( $body['error']['message'] ) ? $body['error']['message'] : 'HTTP ' . $http_code;
+			RR_Generator::log_error( 'FAQ/OpenAI', $err, $post_id );
+			return new \WP_Error( 'openai_http_error', $err );
+		}
+
+		// Track token usage.
+		if ( isset( $body['usage']['total_tokens'] ) ) {
+			RR_Generator::track_tokens( (int) $body['usage']['total_tokens'], $post_id, 'faq' );
+		}
 
 		if ( empty( $body['choices'][0]['message']['content'] ) ) {
 			$error_msg = isset( $body['error']['message'] ) ? $body['error']['message'] : 'Empty response from OpenAI.';
+			RR_Generator::log_error( 'FAQ/OpenAI', $error_msg, $post_id );
 			return new \WP_Error( 'openai_error', $error_msg );
 		}
 
@@ -466,11 +641,14 @@ class RR_Faq {
 		update_post_meta( $post_id, RR_META_FAQ_KEYWORD, $keyword );
 
 		// Bump dateModified by touching the post (legitimate content update).
+		// Set generator guard to prevent wp_update_post from re-triggering summary generation.
+		RR_Generator::$generating = true;
 		wp_update_post( array(
 			'ID'            => $post_id,
 			'post_modified' => current_time( 'mysql' ),
 			'post_modified_gmt' => current_time( 'mysql', true ),
 		) );
+		RR_Generator::$generating = false;
 
 		return $clean_faq;
 	}
@@ -522,18 +700,22 @@ class RR_Faq {
 
 		$prompt .= "PAGE CONTENT:\n{$content}\n\n";
 
-		$prompt .= "RULES:\n";
-		$prompt .= "1. Each answer MUST be 40-60 words (optimal for AI extraction)\n";
-		$prompt .= "2. Use semantic triples: '{$brand_terms} (subject) provides/enables/offers (predicate) [specific feature] (object)'\n";
-		$prompt .= "3. Mention brand terms naturally in answers, not forced, not in every answer\n";
-		$prompt .= "4. Answers must be factual and match the page content. Do NOT hallucinate features or details not on the page\n";
-		$prompt .= "5. Each answer must be self-contained (readable without surrounding context)\n";
-		$prompt .= "6. Include specific details, numbers, or feature names where possible\n";
-		$prompt .= "7. Do NOT use promotional language or superlatives\n";
-		$prompt .= "8. If internal links are provided, reference relevant ones naturally using markdown links\n";
-		$prompt .= "9. Questions should be genuine user questions, not keyword-stuffed\n";
-		$prompt .= "10. Write in simple, conversational tone matching how a website copy reads. No em dashes. No filler words. Stick to the vocabulary and terminology used on the page itself\n";
-		$prompt .= "11. Keep answers plain and direct. No 'certainly', 'indeed', 'absolutely', 'it is worth noting'. Just state the fact\n\n";
+		$prompt .= "QUESTION RULES:\n";
+		$prompt .= "- Each question must address a DIFFERENT topic. No rephrasing the same question.\n";
+		$prompt .= "- Prefer questions from the RELATED SEARCH QUESTIONS list above (real user queries with search volume).\n";
+		$prompt .= "- If a search question cannot be answered from the page content, skip it and write your own question that CAN be answered.\n";
+		$prompt .= "- Questions must be natural, like what a real person would type into Google. Not keyword-stuffed.\n\n";
+
+		$prompt .= "ANSWER RULES:\n";
+		$prompt .= "- 40-60 words per answer (optimal for AI extraction and featured snippets).\n";
+		$prompt .= "- ONLY use facts from the PAGE CONTENT above. NEVER invent features, integrations, compatibility, pricing, or claims.\n";
+		$prompt .= "- If the page does not mention something, do not write it. Period.\n";
+		$prompt .= "- Use exact product names, brand names, and terminology from the page. No renaming, no generalizing.\n";
+		$prompt .= "- Mention brand terms ({$brand_terms}) naturally where relevant, not forced, not in every answer. Use semantic triples: '{$brand_terms} provides/enables/offers [specific feature from the page]'.\n";
+		$prompt .= "- Each answer must be self-contained and directly answer the question.\n";
+		$prompt .= "- Start with the direct answer, not a preamble.\n";
+		$prompt .= "- No promotional language, no superlatives, no filler words.\n";
+		$prompt .= "- If internal links are provided, reference relevant ones as markdown links.\n\n";
 
 		$prompt .= "FORMAT: Return a JSON array of objects with 'question' and 'answer' keys.\n";
 		$prompt .= "Example: [{\"question\": \"How does...\", \"answer\": \"...\"}]\n";
@@ -623,6 +805,26 @@ class RR_Faq {
 		}
 
 		return array_slice( $links, 0, 15 );
+	}
+
+	/**
+	 * Convert markdown-style links to HTML anchor tags.
+	 *
+	 * Handles [anchor text](url) format from OpenAI responses.
+	 *
+	 * @param string $text Text with possible markdown links.
+	 * @return string Text with HTML anchor tags.
+	 */
+	private static function convert_markdown_links( string $text ): string {
+		return preg_replace_callback(
+			'/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/',
+			function ( $matches ) {
+				$anchor = esc_html( $matches[1] );
+				$url    = esc_url( $matches[2] );
+				return '<a href="' . $url . '">' . $anchor . '</a>';
+			},
+			$text
+		);
 	}
 
 	/**
