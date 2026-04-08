@@ -438,6 +438,8 @@ class RR_Block {
 	 * When any major SEO plugin is active, we merge via their filters instead.
 	 */
 	public static function maybe_inject_schema(): void {
+		if ( 'on' !== get_option( RR_OPT_SCHEMA_ARTICLE, 'on' ) ) return;
+
 		// These plugins have dedicated merge filters registered in init().
 		if ( defined( 'RANK_MATH_VERSION' ) )  return;
 		if ( defined( 'WPSEO_VERSION' ) )      return;
@@ -662,17 +664,19 @@ class RR_Block {
 		$post  = get_post( $post_id );
 
 		// ── 1. Speakable — voice search / Google Assistant ─────────────
-		$speakable_selectors = array( 'h1', '.entry-title' );
-		if ( ! empty( get_post_meta( $post_id, RR_META_SUMMARY, true ) ) ) {
-			$speakable_selectors[] = '.rr-summary';
+		if ( 'on' === get_option( RR_OPT_SCHEMA_SPEAKABLE, 'on' ) ) {
+			$speakable_selectors = array( 'h1', '.entry-title' );
+			if ( ! empty( get_post_meta( $post_id, RR_META_SUMMARY, true ) ) ) {
+				$speakable_selectors[] = '.rr-summary';
+			}
+			if ( ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) ) ) {
+				$speakable_selectors[] = '.rr-faq-wrapper';
+			}
+			$props['speakable'] = array(
+				'@type'       => 'SpeakableSpecification',
+				'cssSelector' => $speakable_selectors,
+			);
 		}
-		if ( ! empty( get_post_meta( $post_id, RR_META_FAQ, true ) ) ) {
-			$speakable_selectors[] = '.rr-faq-wrapper';
-		}
-		$props['speakable'] = array(
-			'@type'       => 'SpeakableSpecification',
-			'cssSelector' => $speakable_selectors,
-		);
 
 		// ── 2. hasPart — Key Takeaways as extractable WebPageElement ───
 		if ( 'bullets' === $summary['type'] && is_array( $summary['data'] ) && ! empty( $summary['data'] ) ) {
@@ -975,6 +979,7 @@ class RR_Block {
 	 * Inject HowTo JSON-LD schema if post content contains step-by-step patterns.
 	 */
 	public static function maybe_inject_howto_schema(): void {
+		if ( 'on' !== get_option( RR_OPT_SCHEMA_HOWTO, 'on' ) ) return;
 		if ( ! is_singular() ) return;
 		if ( ! apply_filters( 'rankready_inject_howto_schema', true ) ) return;
 
@@ -1206,6 +1211,7 @@ class RR_Block {
 	 * Inject ItemList JSON-LD schema if post content is a listicle.
 	 */
 	public static function maybe_inject_itemlist_schema(): void {
+		if ( 'on' !== get_option( RR_OPT_SCHEMA_ITEMLIST, 'on' ) ) return;
 		if ( ! is_singular() ) return;
 		if ( ! apply_filters( 'rankready_inject_itemlist_schema', true ) ) return;
 

@@ -37,10 +37,12 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 == Changelog ==
 
 = 1.3 =
+* New: Schema Automation tab — enable/disable toggles for Article, FAQPage, HowTo, ItemList, and Speakable schema with SEO plugin compatibility guide
 * New: HowTo JSON-LD schema auto-detection — scans post content for step patterns (Step N headings, numbered headings, ordered lists) and injects HowTo schema automatically
 * New: HowTo schema skips injection when Rank Math or Yoast HowTo blocks already exist in post content
 * New: ItemList JSON-LD schema auto-detection — scans listicle posts ("Best N", "Top N", "N Best") and injects ItemList schema with item names, URLs, descriptions, and images
 * New: ItemList and HowTo are mutually exclusive — a post gets one or the other based on title patterns
+* New: Auto-detects active SEO plugin (Rank Math, Yoast, AIOSEO) and shows which schema types are handled by each
 * Fix: robots.txt file operations now use WP_Filesystem API instead of file_put_contents/file_get_contents (WordPress.org compliance)
 
 = 1.2 =

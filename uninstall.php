@@ -87,6 +87,12 @@ $options = array(
 	'rr_installed_version',
 	// Migration flag.
 	'rr_aps_migrated',
+	// Schema automation.
+	'rr_schema_article',
+	'rr_schema_faq',
+	'rr_schema_howto',
+	'rr_schema_itemlist',
+	'rr_schema_speakable',
 );
 
 foreach ( $options as $option ) {

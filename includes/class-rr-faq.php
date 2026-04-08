@@ -227,6 +227,9 @@ class RR_Faq {
 	 * - No FAQ data exists for the post
 	 */
 	public static function inject_faq_schema(): void {
+		if ( 'on' !== get_option( RR_OPT_SCHEMA_FAQ, 'on' ) ) {
+			return;
+		}
 		if ( ! is_singular() ) {
 			return;
 		}

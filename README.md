@@ -380,6 +380,7 @@ add_filter( 'rankready_itemlist_schema', function( $schema, $post ) {
 ## Changelog
 
 ### 1.3 (Latest)
+- **Schema Automation tab** — new admin tab with enable/disable toggles for all 5 schema types (Article, FAQPage, HowTo, ItemList, Speakable). Auto-detects active SEO plugin and shows compatibility status. Expandable "How detection works" guides for HowTo and ItemList. Visual schema decision flowchart.
 - **HowTo JSON-LD schema auto-detection** — scans post content for step-by-step patterns (Step N headings, numbered headings, ordered lists) and injects HowTo schema automatically. No manual blocks needed. Skips when Rank Math or Yoast HowTo blocks exist.
 - **ItemList JSON-LD schema auto-detection** — scans listicle posts ("Best N", "Top N", "N Tools/Plugins/Addons") and injects ItemList schema with item names, URLs, descriptions, and images. Supports 20+ list noun patterns and numbered/consecutive heading extraction.
 - **Mutually exclusive schema detection** — HowTo and ItemList are automatically exclusive. Title patterns determine which schema type a post gets. No configuration needed.

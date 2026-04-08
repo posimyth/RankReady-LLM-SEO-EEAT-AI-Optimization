@@ -14,6 +14,7 @@ class RR_Admin {
 	private const SETTINGS_GROUP   = 'rr_settings_group';
 	private const LLMS_GROUP       = 'rr_llms_group';
 	private const FAQ_GROUP        = 'rr_faq_group';
+	private const SCHEMA_GROUP     = 'rr_schema_group';
 	private const MENU_SLUG        = 'rankready';
 	private const NONCE_ACTION     = 'rr_test_connection';
 	private const NONCE_FIELD      = 'rr_test_nonce';
@@ -297,6 +298,38 @@ class RR_Admin {
 			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
 			'default'           => 'on',
 		) );
+
+		// ═══ Schema Automation Tab ═══════════════════════════════════════════
+
+		register_setting( self::SCHEMA_GROUP, RR_OPT_SCHEMA_ARTICLE, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
+
+		register_setting( self::SCHEMA_GROUP, RR_OPT_SCHEMA_FAQ, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
+
+		register_setting( self::SCHEMA_GROUP, RR_OPT_SCHEMA_HOWTO, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
+
+		register_setting( self::SCHEMA_GROUP, RR_OPT_SCHEMA_ITEMLIST, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
+
+		register_setting( self::SCHEMA_GROUP, RR_OPT_SCHEMA_SPEAKABLE, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( self::class, 'sanitize_on_off' ),
+			'default'           => 'on',
+		) );
 	}
 
 	// ── Sanitize callbacks ────────────────────────────────────────────────────
@@ -456,6 +489,7 @@ class RR_Admin {
 			'api'      => __( 'API Keys', 'rankready' ),
 			'summary'  => __( 'AI Summary', 'rankready' ),
 			'faq'      => __( 'FAQ Generator', 'rankready' ),
+			'schema'   => __( 'Schema Automation', 'rankready' ),
 			'llm'      => __( 'LLM Optimization', 'rankready' ),
 			'tools'    => __( 'Tools', 'rankready' ),
 			'info'     => __( 'Info', 'rankready' ),
@@ -500,6 +534,9 @@ class RR_Admin {
 						break;
 					case 'faq':
 						self::render_tab_faq();
+						break;
+					case 'schema':
+						self::render_tab_schema();
 						break;
 					case 'llm':
 						self::render_tab_llm();
@@ -797,6 +834,217 @@ class RR_Admin {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
+	// TAB: Schema Automation
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	private static function render_tab_schema(): void {
+		$article   = (string) get_option( RR_OPT_SCHEMA_ARTICLE, 'on' );
+		$faq       = (string) get_option( RR_OPT_SCHEMA_FAQ, 'on' );
+		$howto     = (string) get_option( RR_OPT_SCHEMA_HOWTO, 'on' );
+		$itemlist  = (string) get_option( RR_OPT_SCHEMA_ITEMLIST, 'on' );
+		$speakable = (string) get_option( RR_OPT_SCHEMA_SPEAKABLE, 'on' );
+
+		// Detect active SEO plugins.
+		$has_rankmath = defined( 'RANK_MATH_VERSION' );
+		$has_yoast    = defined( 'WPSEO_VERSION' );
+		$has_aioseo   = defined( 'AIOSEO_VERSION' );
+		$seo_plugin   = '';
+		if ( $has_rankmath ) $seo_plugin = 'Rank Math';
+		elseif ( $has_yoast ) $seo_plugin = 'Yoast SEO';
+		elseif ( $has_aioseo ) $seo_plugin = 'AIOSEO';
+		?>
+		<?php settings_errors(); ?>
+
+		<form method="post" action="options.php" novalidate="novalidate">
+			<?php settings_fields( self::SCHEMA_GROUP ); ?>
+
+			<!-- SEO Plugin Detection -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'SEO Plugin Compatibility', 'rankready' ); ?></h2>
+				<?php if ( ! empty( $seo_plugin ) ) : ?>
+					<div style="background:#f0f6fc;border-left:4px solid #2271b1;padding:12px 16px;margin-bottom:16px;">
+						<strong><?php echo esc_html( $seo_plugin ); ?></strong> <?php esc_html_e( 'is active.', 'rankready' ); ?>
+						<?php esc_html_e( 'RankReady automatically adjusts schema output to avoid duplicates:', 'rankready' ); ?>
+						<ul style="margin:8px 0 0 20px;list-style:disc;">
+							<li><?php esc_html_e( 'Article schema — Handled by', 'rankready' ); ?> <?php echo esc_html( $seo_plugin ); ?>. <?php esc_html_e( 'RankReady skips it automatically.', 'rankready' ); ?></li>
+							<li><?php esc_html_e( 'FAQPage schema — RankReady injects only when no', 'rankready' ); ?> <?php echo esc_html( $seo_plugin ); ?> <?php esc_html_e( 'FAQ block exists in the post.', 'rankready' ); ?></li>
+							<li><?php esc_html_e( 'HowTo schema — RankReady injects only when no', 'rankready' ); ?> <?php echo esc_html( $seo_plugin ); ?> <?php esc_html_e( 'HowTo block exists in the post.', 'rankready' ); ?></li>
+							<li><?php esc_html_e( 'ItemList schema — Always handled by RankReady (no SEO plugin does this).', 'rankready' ); ?></li>
+						</ul>
+					</div>
+				<?php else : ?>
+					<div style="background:#fcf9e8;border-left:4px solid #dba617;padding:12px 16px;margin-bottom:16px;">
+						<?php esc_html_e( 'No SEO plugin detected. RankReady will handle all schema types (Article, FAQ, HowTo, ItemList).', 'rankready' ); ?>
+					</div>
+				<?php endif; ?>
+			</div>
+
+			<!-- Schema Toggles -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'Schema Types', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'Enable or disable individual schema types. All schema is auto-detected from your existing content — no manual setup required.', 'rankready' ); ?></p>
+
+				<table class="form-table rr-form-table">
+
+					<!-- Article + Speakable -->
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Article Schema', 'rankready' ); ?></th>
+						<td>
+							<label class="rr-toggle">
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_SCHEMA_ARTICLE ); ?>"
+									   value="on" <?php checked( $article, 'on' ); ?>
+									   <?php echo ! empty( $seo_plugin ) ? 'disabled' : ''; ?> />
+								<span class="rr-toggle-label"><?php esc_html_e( 'Article/BlogPosting JSON-LD with author, publisher, dateModified', 'rankready' ); ?></span>
+							</label>
+							<?php if ( ! empty( $seo_plugin ) ) : ?>
+								<p class="description" style="margin-top:4px;color:#666;">
+									<?php echo esc_html( sprintf( __( 'Disabled — %s handles Article schema.', 'rankready' ), $seo_plugin ) ); ?>
+								</p>
+								<input type="hidden" name="<?php echo esc_attr( RR_OPT_SCHEMA_ARTICLE ); ?>" value="on" />
+							<?php else : ?>
+								<p class="description" style="margin-top:4px;">
+									<?php esc_html_e( 'Injects Article JSON-LD on all published posts/pages. Includes headline, author, publisher, image, description, about (categories), mentions (tags).', 'rankready' ); ?>
+								</p>
+							<?php endif; ?>
+						</td>
+					</tr>
+
+					<!-- Speakable -->
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Speakable', 'rankready' ); ?></th>
+						<td>
+							<label class="rr-toggle">
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_SCHEMA_SPEAKABLE ); ?>"
+									   value="on" <?php checked( $speakable, 'on' ); ?> />
+								<span class="rr-toggle-label"><?php esc_html_e( 'Add speakable markup for voice search and AI assistants', 'rankready' ); ?></span>
+							</label>
+							<p class="description" style="margin-top:4px;">
+								<?php esc_html_e( 'Marks the title and excerpt as speakable content. Helps Google Assistant, Alexa, and AI voice queries read your content aloud. Works with both RankReady and SEO plugin Article schema.', 'rankready' ); ?>
+							</p>
+						</td>
+					</tr>
+
+					<!-- FAQPage -->
+					<tr>
+						<th scope="row"><?php esc_html_e( 'FAQPage Schema', 'rankready' ); ?></th>
+						<td>
+							<label class="rr-toggle">
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_SCHEMA_FAQ ); ?>"
+									   value="on" <?php checked( $faq, 'on' ); ?> />
+								<span class="rr-toggle-label"><?php esc_html_e( 'Inject FAQPage JSON-LD when FAQ data exists', 'rankready' ); ?></span>
+							</label>
+							<p class="description" style="margin-top:4px;">
+								<?php esc_html_e( 'When RankReady FAQ data exists for a post, FAQPage schema is injected automatically. Pages with FAQPage schema are 3.2x more likely to appear in AI Overviews.', 'rankready' ); ?>
+							</p>
+							<?php if ( ! empty( $seo_plugin ) ) : ?>
+								<p class="description" style="color:#666;">
+									<?php echo esc_html( sprintf( __( 'Auto-skips when a %s FAQ block is present in the post content to prevent duplicates.', 'rankready' ), $seo_plugin ) ); ?>
+								</p>
+							<?php endif; ?>
+						</td>
+					</tr>
+
+					<!-- HowTo -->
+					<tr>
+						<th scope="row"><?php esc_html_e( 'HowTo Schema', 'rankready' ); ?></th>
+						<td>
+							<label class="rr-toggle">
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_SCHEMA_HOWTO ); ?>"
+									   value="on" <?php checked( $howto, 'on' ); ?> />
+								<span class="rr-toggle-label"><?php esc_html_e( 'Auto-detect step-by-step content and inject HowTo JSON-LD', 'rankready' ); ?></span>
+							</label>
+							<p class="description" style="margin-top:4px;">
+								<?php esc_html_e( 'Scans posts with "How to", "Tutorial", "Step by Step", or "Guide to" in the title. Extracts steps from your existing headings (Step 1, Step 2...) or ordered lists. No content changes needed.', 'rankready' ); ?>
+							</p>
+							<details style="margin-top:8px;">
+								<summary style="cursor:pointer;color:#2271b1;font-weight:500;"><?php esc_html_e( 'How detection works', 'rankready' ); ?></summary>
+								<div style="margin-top:8px;padding:12px;background:#f9f9f9;border-radius:4px;">
+									<p style="margin:0 0 8px;"><strong><?php esc_html_e( 'Title must contain one of:', 'rankready' ); ?></strong> "how to", "how-to", "step by step", "step-by-step", "tutorial", "guide to"</p>
+									<p style="margin:0 0 8px;"><strong><?php esc_html_e( 'Steps detected from (in priority order):', 'rankready' ); ?></strong></p>
+									<ol style="margin:0 0 8px 20px;">
+										<li><?php esc_html_e( 'Headings with "Step N" — e.g., <h2>Step 1: Install the Plugin</h2>', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Numbered headings — e.g., <h2>1. Install the Plugin</h2>', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Ordered lists — <ol><li>Install the Plugin</li></ol>', 'rankready' ); ?></li>
+									</ol>
+									<p style="margin:0;"><strong><?php esc_html_e( 'Minimum:', 'rankready' ); ?></strong> <?php esc_html_e( '2 steps required. Extracts step name, description, and images automatically.', 'rankready' ); ?></p>
+								</div>
+							</details>
+							<?php if ( ! empty( $seo_plugin ) ) : ?>
+								<p class="description" style="margin-top:4px;color:#666;">
+									<?php echo esc_html( sprintf( __( 'Auto-skips when a %s HowTo block is present in the post content.', 'rankready' ), $seo_plugin ) ); ?>
+								</p>
+							<?php endif; ?>
+						</td>
+					</tr>
+
+					<!-- ItemList -->
+					<tr>
+						<th scope="row"><?php esc_html_e( 'ItemList Schema', 'rankready' ); ?></th>
+						<td>
+							<label class="rr-toggle">
+								<input type="checkbox" name="<?php echo esc_attr( RR_OPT_SCHEMA_ITEMLIST ); ?>"
+									   value="on" <?php checked( $itemlist, 'on' ); ?> />
+								<span class="rr-toggle-label"><?php esc_html_e( 'Auto-detect listicle posts and inject ItemList JSON-LD', 'rankready' ); ?></span>
+							</label>
+							<p class="description" style="margin-top:4px;">
+								<?php esc_html_e( 'Scans posts with "Best N", "Top N", "N Best Plugins", etc. in the title. Extracts list items from numbered headings. Perfect for "best of" and comparison posts that AI models use for recommendations.', 'rankready' ); ?>
+							</p>
+							<details style="margin-top:8px;">
+								<summary style="cursor:pointer;color:#2271b1;font-weight:500;"><?php esc_html_e( 'How detection works', 'rankready' ); ?></summary>
+								<div style="margin-top:8px;padding:12px;background:#f9f9f9;border-radius:4px;">
+									<p style="margin:0 0 8px;"><strong><?php esc_html_e( 'Title must match one of these patterns:', 'rankready' ); ?></strong></p>
+									<ul style="margin:0 0 8px 20px;list-style:disc;">
+										<li><?php esc_html_e( 'Number + qualifier: "10 Best WordPress Plugins", "Top 5 Elementor Addons"', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Qualifier + number: "Best 10 Tools for SEO"', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Number + noun: "7 Plugins Every Developer Needs", "15 Tips for Speed"', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Qualifier without number: "Best Elementor Addons", "Top WordPress Themes"', 'rankready' ); ?></li>
+									</ul>
+									<p style="margin:0 0 8px;"><strong><?php esc_html_e( 'Items extracted from:', 'rankready' ); ?></strong></p>
+									<ol style="margin:0 0 8px 20px;">
+										<li><?php esc_html_e( 'Numbered headings — e.g., <h2>1. Essential Addons</h2>', 'rankready' ); ?></li>
+										<li><?php esc_html_e( 'Consecutive headings — 3+ h2/h3 headings in sequence', 'rankready' ); ?></li>
+									</ol>
+									<p style="margin:0;"><strong><?php esc_html_e( 'Per item:', 'rankready' ); ?></strong> <?php esc_html_e( 'Extracts name, URL (from links), description (first paragraph), and image. Minimum 3 items required.', 'rankready' ); ?></p>
+								</div>
+							</details>
+							<p class="description" style="margin-top:4px;color:#666;">
+								<?php esc_html_e( 'Mutually exclusive with HowTo — if the title matches both, HowTo takes priority. No SEO plugin provides automatic ItemList detection.', 'rankready' ); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<!-- How Schema Decision Works -->
+			<div class="rr-card">
+				<h2 class="rr-card-title"><?php esc_html_e( 'How Schema Detection Works', 'rankready' ); ?></h2>
+				<p class="rr-card-desc"><?php esc_html_e( 'RankReady reads each post and automatically decides which schema to inject. No manual setup needed.', 'rankready' ); ?></p>
+				<div style="padding:16px;background:#f9f9f9;border-radius:4px;font-family:monospace;font-size:13px;line-height:1.8;">
+					<?php esc_html_e( 'Post loads on frontend', 'rankready' ); ?><br>
+					&nbsp;&nbsp;|<br>
+					&nbsp;&nbsp;|-- <?php esc_html_e( 'Article schema?', 'rankready' ); ?><br>
+					<?php if ( ! empty( $seo_plugin ) ) : ?>
+					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php echo esc_html( sprintf( __( 'Skipped (%s active)', 'rankready' ), $seo_plugin ) ); ?><br>
+					<?php else : ?>
+					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php esc_html_e( 'YES — injected on all posts/pages', 'rankready' ); ?><br>
+					<?php endif; ?>
+					&nbsp;&nbsp;|<br>
+					&nbsp;&nbsp;|-- <?php esc_html_e( 'FAQPage schema?', 'rankready' ); ?><br>
+					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php esc_html_e( 'Only if RankReady FAQ data exists AND no SEO plugin FAQ block in content', 'rankready' ); ?><br>
+					&nbsp;&nbsp;|<br>
+					&nbsp;&nbsp;|-- <?php esc_html_e( 'HowTo schema?', 'rankready' ); ?><br>
+					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php esc_html_e( 'Only if title has "how to/tutorial/step by step" AND 2+ steps detected', 'rankready' ); ?><br>
+					&nbsp;&nbsp;|<br>
+					&nbsp;&nbsp;|-- <?php esc_html_e( 'ItemList schema?', 'rankready' ); ?><br>
+					&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php esc_html_e( 'Only if title has "Best N/Top N/N Plugins" AND 3+ items AND NOT a HowTo post', 'rankready' ); ?>
+				</div>
+			</div>
+
+			<?php submit_button(); ?>
+		</form>
+		<?php
+	}
+
 	// TAB: LLM Optimization
 	// ═══════════════════════════════════════════════════════════════════════════
 

@@ -61,6 +61,13 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_OPT_MD_POST_TYPES',     'rr_md_post_types' );
 	define( 'RR_OPT_MD_INCLUDE_META',   'rr_md_include_meta' );
 
+	// Option keys — Schema Automation.
+	define( 'RR_OPT_SCHEMA_ARTICLE',   'rr_schema_article' );
+	define( 'RR_OPT_SCHEMA_FAQ',       'rr_schema_faq' );
+	define( 'RR_OPT_SCHEMA_HOWTO',     'rr_schema_howto' );
+	define( 'RR_OPT_SCHEMA_ITEMLIST',  'rr_schema_itemlist' );
+	define( 'RR_OPT_SCHEMA_SPEAKABLE', 'rr_schema_speakable' );
+
 	// Option keys — FAQ.
 	define( 'RR_OPT_DFS_LOGIN',        'rr_dfs_login' );
 	define( 'RR_OPT_DFS_PASSWORD',     'rr_dfs_password' );
