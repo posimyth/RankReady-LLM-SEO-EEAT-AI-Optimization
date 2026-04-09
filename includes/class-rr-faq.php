@@ -619,14 +619,25 @@ class RR_Faq {
 		$faq_system .= "- Write like a knowledgeable human on Reddit answering a question. Direct, specific, no fluff.\n";
 		$faq_system .= "- No em dashes. No filler (certainly, indeed, it is worth noting, comprehensive, robust, leverage, utilize).\n";
 		$faq_system .= "- No generic openers like 'Yes, ...', 'Absolutely, ...', 'Great question!', 'To select...', 'After selecting...'\n";
-		$faq_system .= "- If the page content does not have enough info to answer a question, skip that question and pick another.\n";
+		$faq_system .= "- If the page content does not have enough info to answer a question, SKIP IT and pick a different question. NEVER write an answer that says 'the page does not mention' or 'there is no information about' — just don't include that question at all.\n";
+		$faq_system .= "- NEVER write answers that just say 'follow the steps' or 'following the provided steps' or 'use the recommended approach'. That is zero-value content.\n";
+		$faq_system .= "- Each answer must TEACH something — add context, explain WHY, give a tip, mention a gotcha, or connect to a bigger picture. Don't just restate what the page says.\n";
 		$faq_system .= "- Each answer should contain a SPECIFIC fact, number, name, or detail from the page. No vague statements.\n\n";
 		$faq_system .= "BANNED QUESTION PATTERNS (never generate these):\n";
 		$faq_system .= "- Questions that just rephrase a heading or menu step from the page (e.g. 'How do I select X?' when the page already shows the dropdown)\n";
 		$faq_system .= "- Questions about UI clicks that only have one obvious answer (e.g. 'What happens after I click X button?')\n";
 		$faq_system .= "- Questions where the answer is just 'do the thing the page already tells you to do'\n";
 		$faq_system .= "- Overly narrow questions about a single dropdown or checkbox option\n";
-		$faq_system .= "- Questions nobody would ever actually type into Google or ask an AI chatbot\n\n";
+		$faq_system .= "- Questions nobody would ever actually type into Google or ask an AI chatbot\n";
+		$faq_system .= "- 'What do I need before starting...' or 'What are the prerequisites...' — boring, obvious, low-value\n";
+		$faq_system .= "- 'What happens after I complete the steps...' or 'What happens when I finish...' — the page already shows this\n";
+		$faq_system .= "- 'Is there an alternative way/method...' — unless the page actually discusses alternatives\n\n";
+		$faq_system .= "BANNED ANSWER PATTERNS (never write these):\n";
+		$faq_system .= "- 'The page does not mention...' or 'There is no information about...' — skip the question instead\n";
+		$faq_system .= "- 'Follow the steps provided' or 'following the provided steps' or 'using the recommended approach'\n";
+		$faq_system .= "- Answers that just rephrase the page instructions in slightly different words\n";
+		$faq_system .= "- One-sentence answers with no depth or insight\n";
+		$faq_system .= "- Answers that read like a manual ('Step 1: Go to... Step 2: Click...')\n\n";
 		$faq_system .= "GOOD QUESTION PATTERNS (generate these):\n";
 		$faq_system .= "- Troubleshooting: 'Why isn't X working?', 'X not showing up, how to fix?'\n";
 		$faq_system .= "- Real-world use cases: 'Can I use X for [practical scenario]?'\n";
@@ -634,6 +645,9 @@ class RR_Faq {
 		$faq_system .= "- Comparison: 'What is the difference between X and Y?'\n";
 		$faq_system .= "- Limitations: 'Are there any limitations with X?'\n";
 		$faq_system .= "- Best practices: 'What settings work best for X use case?'\n";
+		$faq_system .= "- Performance/impact: 'Does X slow down the page?', 'Any performance considerations?'\n";
+		$faq_system .= "- Edge cases: 'Does X work on mobile/tablet?', 'What about RTL layouts?'\n";
+		$faq_system .= "- Common mistakes: 'What do most people get wrong when setting up X?'\n";
 
 		$product_context = (string) get_option( RR_OPT_PRODUCT_CONTEXT, '' );
 		if ( ! empty( $product_context ) ) {
@@ -947,8 +961,10 @@ class RR_Faq {
 		$prompt .= "- Mention brand terms ({$brand_terms}) naturally where relevant using semantic triples:\n";
 		$prompt .= "  '{$brand_terms} provides/enables/offers [specific feature from the page]'\n";
 		$prompt .= "  '{$brand_terms} works with/supports/integrates [thing mentioned on page]'\n";
-		$prompt .= "- NEVER start with 'Yes, you can...', 'To do X, ...', 'After doing X, ...', or 'You need to...'\n";
-		$prompt .= "- Start with the fact or insight, not with instructions. Example: 'The blend cursor uses CSS mix-blend-mode under the hood, so...' instead of 'To add a blend cursor, go to...'\n";
+		$prompt .= "- NEVER start with 'Yes, you can...', 'To do X, ...', 'After doing X, ...', 'You need to...', 'The page does not...'\n";
+		$prompt .= "- Start with the insight or the WHY, not the HOW. Example: 'The blend cursor relies on CSS mix-blend-mode, which means it works differently on elements with transparent backgrounds. Set the Circle Z-Index higher if...' instead of 'To add a blend cursor, go to Settings and select...'\n";
+		$prompt .= "- Add VALUE beyond what the page says: explain WHY a setting matters, WHEN to use it, WHAT happens if you don't, or a common GOTCHA.\n";
+		$prompt .= "- Write like a senior dev answering on Reddit: helpful, opinionated, specific, with real-world context.\n";
 		$prompt .= "- No promotional language, no superlatives, no filler phrases.\n";
 		$prompt .= "- Reference internal links as markdown links where relevant.\n";
 		$prompt .= "- Make each answer quotable: an AI chatbot should be able to cite this answer directly.\n\n";
