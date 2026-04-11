@@ -3,7 +3,7 @@
  * Plugin Name:       RankReady – LLM SEO, EEAT & AI Optimization
  * Plugin URI:        https://posimyth.com/rankready/
  * Description:       AI summaries, Article JSON-LD schema with speakable, LLMs.txt generator, Markdown endpoints for LLM crawlers, bulk author changer. Built for LLM SEO, EEAT, and AI Overviews.
- * Version:           1.5.3
+ * Version:           1.5.4
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            POSIMYTH Innovations
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 
 // ── Constants (guarded to prevent conflicts) ─────────────────────────────────
 if ( ! defined( 'RR_VERSION' ) ) {
-	define( 'RR_VERSION',  '1.5.3' );
+	define( 'RR_VERSION',  '1.5.4' );
 	define( 'RR_FILE',     __FILE__ );
 	define( 'RR_DIR',      plugin_dir_path( __FILE__ ) );
 	define( 'RR_URL',      plugin_dir_url( __FILE__ ) );
@@ -98,6 +98,16 @@ if ( ! defined( 'RR_VERSION' ) ) {
 	define( 'RR_OPT_FAQ_POSITION',     'rr_faq_position' );
 	define( 'RR_OPT_FAQ_HEADING_TAG',  'rr_faq_heading_tag' );
 	define( 'RR_OPT_FAQ_SHOW_REVIEWED','rr_faq_show_reviewed' );
+
+	// Headless / Public API options.
+	define( 'RR_OPT_HEADLESS_ENABLE',          'rr_headless_enable' );            // Master toggle for public read-only API.
+	define( 'RR_OPT_HEADLESS_CORS_ORIGINS',    'rr_headless_cors_origins' );      // Comma-separated allowed frontend origins.
+	define( 'RR_OPT_HEADLESS_EXPOSE_META',     'rr_headless_expose_meta' );       // Register _rr_faq / _rr_summary in core REST.
+	define( 'RR_OPT_HEADLESS_CACHE_TTL',       'rr_headless_cache_ttl' );         // CDN cache max-age in seconds (s-maxage).
+	define( 'RR_OPT_HEADLESS_RATE_LIMIT',      'rr_headless_rate_limit' );        // Requests per minute per IP.
+	define( 'RR_OPT_HEADLESS_REVALIDATE_URL',  'rr_headless_revalidate_url' );    // Next.js/Nuxt webhook URL.
+	define( 'RR_OPT_HEADLESS_REVALIDATE_SEC',  'rr_headless_revalidate_secret' ); // Shared secret for webhook auth.
+	define( 'RR_OPT_HEADLESS_GRAPHQL',         'rr_headless_graphql' );           // Register WPGraphQL fields.
 
 	// Meta keys.
 	define( 'RR_META_SUMMARY',   '_rr_summary' );
@@ -240,6 +250,7 @@ add_action( 'plugins_loaded', function (): void {
 	RR_Llms_Txt::init();
 	RR_Markdown::init();
 	RR_Faq::init();
+	RR_Headless::init();
 
 	if ( did_action( 'elementor/loaded' ) ) {
 		add_action( 'elementor/widgets/register', function ( $widgets_manager ): void {

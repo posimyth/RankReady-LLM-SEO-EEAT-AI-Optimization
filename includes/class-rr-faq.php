@@ -1074,6 +1074,50 @@ class RR_Faq {
 	}
 
 	/**
+	 * Build FAQPage JSON-LD schema array for a post.
+	 *
+	 * Returns the raw array (not echoed) so it can be used by the public
+	 * REST endpoint for headless WordPress setups. Returns empty array
+	 * if no FAQ data exists.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return array FAQPage schema array (empty if no data).
+	 */
+	public static function build_faq_schema_array( int $post_id ): array {
+		$faq_data = self::get_faq_data( $post_id );
+		if ( empty( $faq_data ) ) {
+			return array();
+		}
+
+		$main_entity = array();
+		foreach ( $faq_data as $item ) {
+			$q = isset( $item['question'] ) ? $item['question'] : '';
+			$a = isset( $item['answer'] ) ? $item['answer'] : '';
+			if ( empty( $q ) || empty( $a ) ) {
+				continue;
+			}
+			$main_entity[] = array(
+				'@type'          => 'Question',
+				'name'           => $q,
+				'acceptedAnswer' => array(
+					'@type' => 'Answer',
+					'text'  => wp_strip_all_tags( self::convert_markdown_links( $a ) ),
+				),
+			);
+		}
+
+		if ( empty( $main_entity ) ) {
+			return array();
+		}
+
+		return array(
+			'@context'   => 'https://schema.org',
+			'@type'      => 'FAQPage',
+			'mainEntity' => $main_entity,
+		);
+	}
+
+	/**
 	 * Post-generation validation — reject FAQ items that violate banned patterns.
 	 *
 	 * Catches patterns that the LLM ignored despite prompt instructions.
