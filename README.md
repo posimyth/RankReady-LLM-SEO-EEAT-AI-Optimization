@@ -7,7 +7,8 @@ RankReady is the most complete WordPress plugin for AI search optimization. It c
 [![WordPress](https://img.shields.io/badge/WordPress-6.2%2B-blue.svg)](https://wordpress.org)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)](https://php.net)
 [![License](https://img.shields.io/badge/License-GPL--2.0--or--later-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
-[![Version](https://img.shields.io/badge/Version-1.3-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization)
+[![Version](https://img.shields.io/badge/Version-1.5.4-orange.svg)](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization/releases)
+[![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-brightgreen.svg)](CHANGELOG.md)
 
 ---
 
@@ -46,6 +47,9 @@ No other WordPress plugin combines all of these:
 | Content Freshness Alerts | Yes | No | No | No | No | No |
 | Bulk Author Changer (EEAT) | Yes | No | No | No | No | No |
 | Content Negotiation (Accept header) | Yes | No | No | No | No | No |
+| **Headless REST API (Next.js / Nuxt)** | **Yes** | No | No | No | No | No |
+| **WPGraphQL Fields** | **Yes** | No | No | No | No | No |
+| **On-Demand Revalidation Webhook** | **Yes** | No | No | No | No | No |
 | DataForSEO + OpenAI Usage Tracking | Yes | N/A | N/A | N/A | No | No |
 | Health Check Diagnostic | Yes | No | No | No | No | No |
 
@@ -220,6 +224,93 @@ Reassign post authors across any post type for E-E-A-T optimization:
 - **Error Log**: Recent API errors with source, timestamp, post reference
 - **Bulk Operations**: Summary, FAQ, and Start Over with resume capability
 
+### 10. Headless WordPress Public API (NEW in v1.5.4)
+
+Production-grade read-only REST API built for headless WordPress — Next.js, Nuxt, Astro, SvelteKit, Gatsby, Faust.js, WPEngine Atlas, and any frontend where the backend domain is separate from the rendering layer.
+
+**Endpoints** (namespace `rankready/v1/public/`):
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/faq/{id}` | FAQ items for a post |
+| GET | `/summary/{id}` | AI summary for a post |
+| GET | `/schema/{id}` | Ready-to-inject JSON-LD (FAQPage + HowTo + ItemList) |
+| GET | `/post/{id}` | Combined payload (FAQ + summary + schemas) in one request |
+| GET | `/post-by-slug/{slug}` | Lookup by slug with `post_type` and `lang` filters |
+| GET | `/list` | Paginated list for SSG / ISR build steps |
+| POST | `/revalidate` | Manual revalidation trigger (shared secret required) |
+
+**Also exposes** `rankready_faq`, `rankready_summary`, `rankready_schema` as native REST fields on `/wp/v2/posts/{id}` — so Faust.js and any existing REST consumer picks them up automatically.
+
+**Enterprise features:**
+
+- **HTTP caching**: ETag (weak, payload + version hash), Last-Modified, `Cache-Control: public, s-maxage=N, stale-while-revalidate=86400`, automatic `304 Not Modified` on matching `If-None-Match` / `If-Modified-Since`
+- **CORS hardening**: Allowlist from settings, `Vary: Origin`, `Access-Control-Expose-Headers: ETag, Last-Modified, X-RR-*`
+- **Rate limiting**: Transient per-IP (default 120 req/min, configurable), real IP detection via `CF-Connecting-IP` / `X-Forwarded-For` / `X-Real-IP`, authenticated editors exempt, `429` + `Retry-After` on exceed
+- **On-Demand Revalidation**: Fire-and-forget POST to Next.js / Nuxt endpoint when FAQ / summary / schema changes. `blocking=>false, timeout=>0.01` so the editor flow never waits. `X-RR-Secret` header verified with `hash_equals()` on the frontend.
+- **WPGraphQL integration**: Conditional `rankReadyFaq`, `rankReadySummary`, `rankReadySchema` fields on every public post type when WPGraphQL is active
+- **Multilingual**: Polylang + WPML support — `lang` query arg on slug / list endpoints, translations map in combined payload
+- **RFC 7807 errors**: 4xx / 5xx responses on `/public/` routes transformed to `application/problem+json`
+- **Security**: Per-page capped at 100, password-protected posts return 403, `hash_equals()` for secrets, no admin / PII in any response
+- **Observability**: `X-RR-Version`, `X-RR-Request-Id`, `X-RR-Cache` headers for debugging
+
+**Example Next.js integration:**
+
+```js
+// app/blog/[slug]/page.js
+export const revalidate = 300; // 5 min s-maxage matches RankReady default
+
+export async function generateMetadata({ params }) {
+  const res = await fetch(
+    `${process.env.WP_URL}/wp-json/rankready/v1/public/post-by-slug/${params.slug}`,
+    { next: { revalidate: 300 } }
+  );
+  const data = await res.json();
+  return { title: data.title };
+}
+
+export default async function Post({ params }) {
+  const data = await (
+    await fetch(`${process.env.WP_URL}/wp-json/rankready/v1/public/post-by-slug/${params.slug}`)
+  ).json();
+
+  return (
+    <article>
+      <h1>{data.title}</h1>
+      {/* Inject JSON-LD directly */}
+      {Object.values(data.schemas).map((s, i) => (
+        <script key={i} type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(s) }} />
+      ))}
+      {/* Render FAQ and summary */}
+      {data.summary.has_data && <aside>{data.summary.text}</aside>}
+      {data.faq.has_data && data.faq.items.map((f, i) => (
+        <details key={i}><summary>{f.question}</summary><p>{f.answer}</p></details>
+      ))}
+    </article>
+  );
+}
+```
+
+**Example Next.js revalidate endpoint:**
+
+```js
+// app/api/revalidate/route.js
+import { revalidatePath } from 'next/cache';
+
+export async function POST(request) {
+  const secret = request.headers.get('x-rr-secret');
+  if (secret !== process.env.RR_REVALIDATE_SECRET) {
+    return Response.json({ error: 'invalid secret' }, { status: 401 });
+  }
+  const { slug } = await request.json();
+  revalidatePath(`/blog/${slug}`);
+  return Response.json({ revalidated: true, slug });
+}
+```
+
+**Off by default.** Enable in `RankReady > Headless` tab. Configure CORS origins, cache TTL, rate limit, revalidate webhook URL + secret, and optional WPGraphQL fields.
+
 ---
 
 ## Schema Auto-Detection: How It Decides
@@ -379,38 +470,33 @@ add_filter( 'rankready_itemlist_schema', function( $schema, $post ) {
 
 ## Changelog
 
-### 1.3 (Latest)
-- **Schema Automation tab** — new admin tab with enable/disable toggles for all 5 schema types (Article, FAQPage, HowTo, ItemList, Speakable). Auto-detects active SEO plugin and shows compatibility status. Expandable "How detection works" guides for HowTo and ItemList. Visual schema decision flowchart.
-- **HowTo JSON-LD schema auto-detection** — scans post content for step-by-step patterns (Step N headings, numbered headings, ordered lists) and injects HowTo schema automatically. No manual blocks needed. Skips when Rank Math or Yoast HowTo blocks exist.
-- **ItemList JSON-LD schema auto-detection** — scans listicle posts ("Best N", "Top N", "N Tools/Plugins/Addons") and injects ItemList schema with item names, URLs, descriptions, and images. Supports 20+ list noun patterns and numbered/consecutive heading extraction.
-- **Mutually exclusive schema detection** — HowTo and ItemList are automatically exclusive. Title patterns determine which schema type a post gets. No configuration needed.
-- **WP_Filesystem API** — all robots.txt file operations now use WordPress Filesystem API instead of direct PHP file functions. Ready for WordPress.org plugin directory submission.
-- **Developer filters** — `rankready_inject_howto_schema`, `rankready_inject_itemlist_schema`, and `rankready_itemlist_schema` for full developer control.
+Full release history lives in [**CHANGELOG.md**](CHANGELOG.md) (Keep a Changelog format).
+Downloadable builds are published to [**GitHub Releases**](https://github.com/posimyth/RankReady-LLM-SEO-EEAT-AI-Optimization/releases) with the plugin zip attached to each release.
 
-### 1.2
-- Content Freshness Alerts with urgency scoring (critical/high/moderate)
-- Expanded to 31 AI crawlers (was 22) — added anthropic-ai, GoogleOther, Meta-ExternalFetcher, MistralAI-User, PetalBot, Omgilibot, Brightbot, magpie-crawler, DataForSeoBot
-- PHP 8.0+ compatibility fix (FAQ return type)
-- FAQ OpenAI call uses JSON response format (prevents markdown-wrapped JSON)
-- Markdown endpoints cached via 5-minute transients (keyed by post_modified)
-- llms-full.txt uses strip_shortcodes for performance (prevents expensive shortcode execution during bulk generation)
-- flush_rewrite_rules deferred to init hook
+- **Latest**: [1.5.4](CHANGELOG.md#154---2026-04-11) — Enterprise Headless WordPress support (Next.js / Nuxt / WPGraphQL)
+- **Previous**: [1.5.3](CHANGELOG.md#153---2026-04-09) — Cron queue stability fixes and post-generation FAQ validation
 
-### 0.4.6
-- Security hardening: API key leak prevention, SQL prepare with positional placeholders, multisite guard
-- get_term_link WP_Error checks in schema
-- FAQ OpenAI HTTP status validation
-- Migration runs only once via completion flag
+---
 
-### 0.4.5
-- Schema about/mentions work with ALL custom post types and custom taxonomies
+## Versioning & Releases
 
-### 0.4.4
-- Health Check diagnostic tool (12-point scan)
-- DataForSEO usage tracking
-- Resume button for bulk operations
+RankReady follows [Semantic Versioning](https://semver.org/). Version numbers live in three places and must stay in sync:
 
-[Full changelog in readme.txt](readme.txt)
+1. `rankready.php` — `Version:` header + `RR_VERSION` constant
+2. `readme.txt` — `Stable tag:` line and `== Changelog ==` section (WordPress.org format)
+3. `CHANGELOG.md` — add a new section under `## [Unreleased]`, then cut a new version heading
+
+After bumping, build the zip and publish to GitHub Releases with the built zip attached:
+
+```bash
+# From ~/Claude/rankready-v2/rankready
+git tag -a 1.5.4 -m "v1.5.4"
+git push origin 1.5.4
+gh release create 1.5.4 \
+  ~/Claude/RankReady/rankready-1.5.4.zip \
+  --title "v1.5.4 — Enterprise Headless" \
+  --notes-file <(awk '/^## \[1\.5\.4\]/,/^## \[1\.5\.3\]/' CHANGELOG.md | sed '$d')
+```
 
 ---
 

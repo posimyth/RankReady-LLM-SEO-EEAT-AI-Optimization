@@ -4,7 +4,7 @@ Tags: llm seo, ai summary, schema markup, llms.txt, eeat
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.5.3
+Stable tag: 1.5.4
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,6 +35,21 @@ RankReady optimizes your WordPress site for AI search engines, LLM crawlers, and
 5. Configure LLMs.txt and Markdown in the LLM Optimization tab.
 
 == Changelog ==
+
+= 1.5.4 =
+* New: Enterprise Headless WordPress support — public read-only REST API for Next.js, Nuxt, Astro, SvelteKit, Gatsby, Faust.js, Atlas
+* New: Public endpoints at rankready/v1/public/ — faq/{id}, summary/{id}, schema/{id}, post/{id}, post-by-slug/{slug}, list, revalidate
+* New: rankready_faq, rankready_summary, rankready_schema exposed as core REST fields on /wp/v2/posts/{id}
+* New: HTTP caching — ETag + Last-Modified + Cache-Control s-maxage + stale-while-revalidate + 304 Not Modified
+* New: CORS hardening — allowlist with Vary: Origin and Access-Control-Expose-Headers
+* New: Rate limiting — transient per-IP (default 120/min), real IP detection via Cloudflare / X-Forwarded-For / X-Real-IP
+* New: On-Demand Revalidation webhook — fire-and-forget POST to Next.js / Nuxt on FAQ / summary updates, hash_equals() secret verification
+* New: WPGraphQL integration — conditional rankReadyFaq, rankReadySummary, rankReadySchema fields
+* New: Multilingual support — Polylang and WPML language detection, translations map, lang query arg
+* New: RFC 7807 Problem Details error format (application/problem+json) on 4xx / 5xx public endpoint errors
+* New: Admin Headless tab with master toggle, CORS origins, cache TTL, rate limit, revalidate URL / secret, WPGraphQL toggle, endpoint reference
+* Security: Per-page capped at 100 on list endpoint, password-protected posts return 403, no admin or PII data in any response
+* Note: Headless mode is off by default — existing installs are unaffected
 
 = 1.5.3 =
 * Fix: FAQ bulk cron was getting stuck when a post threw a fatal error — queue persisted BEFORE generation so a failed post no longer blocks the entire queue
