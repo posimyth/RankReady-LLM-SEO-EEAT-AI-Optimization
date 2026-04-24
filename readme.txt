@@ -1,5 +1,5 @@
 === RankReady – AI & LLM SEO for ChatGPT, Perplexity & Google AI ===
-Contributors: posimyth,sagarpatel124,adityaarsharma
+Contributors: posimyththemes,sagarpatel124,adityaarsharma
 Tags: ai seo, llms.txt, schema markup, chatgpt, faq
 Requires at least: 6.0
 Tested up to: 6.9
