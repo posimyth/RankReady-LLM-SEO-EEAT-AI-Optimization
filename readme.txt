@@ -1,10 +1,10 @@
 === RankReady – AI & LLM SEO for ChatGPT, Perplexity & Google AI ===
-Contributors: posimyth, adityaarsharma
+Contributors: posimyth,sagarpatel124,adityaarsharma
 Tags: ai seo, llms.txt, schema markup, chatgpt, faq
 Requires at least: 6.0
-Tested up to: 6.7
+Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 0.0.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -140,20 +140,9 @@ By default, RankReady **preserves your data on uninstall** — your settings, AP
 
 Yes. RankReady is open source under GPL-2.0-or-later. Source: [github.com/adityaarsharma/rankready](https://github.com/adityaarsharma/rankready).
 
-== Screenshots ==
-
-1. RankReady Dashboard — see your AI SEO status at a glance with stats and quick navigation.
-2. Content AI tab — generate AI Summaries and FAQs for any post; track monthly usage.
-3. Authority tab — Author Box settings + Schema controls (FAQPage, Article, Speakable).
-4. AI Crawlers tab — block or allow 31 AI bots, generate LLMs.txt, enable Markdown endpoints.
-5. Settings tab — single-screen config for OpenAI, DataForSEO, and brand context.
-6. Author Box on the frontend — clean EEAT-optimized bio displayed at the end of every post.
-7. AI Summary block — auto-injected "Key Takeaways" with Speakable schema for voice assistants.
-8. FAQ block — expandable Q&A with FAQPage JSON-LD that AI Overviews preferentially cite.
-
 == Changelog ==
 
-= 1.0.0 — 2026-04-23 =
+= 0.0.1 — 2026-04-24 =
 
 **First public freemium release for WordPress.org.**
 
@@ -174,5 +163,5 @@ For the full pre-1.0.0 development history (versions 0.5.0 through 0.6.7.2), see
 
 == Upgrade Notice ==
 
-= 1.0.0 =
+= 0.0.1 =
 First public release on WordPress.org. Existing users on the GitHub-distributed v0.6.x: this version removes the GitHub auto-update path. After upgrading to 1.0.0, all future updates will arrive via WordPress.org's standard plugin updater.
