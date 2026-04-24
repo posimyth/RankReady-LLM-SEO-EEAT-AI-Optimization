@@ -305,8 +305,10 @@ class RR_Limits {
 		if ( empty( $post_types ) || ! is_array( $post_types ) ) {
 			$post_types = array( 'post' );
 		}
+		// $placeholders only contains "%s,%s,..." tokens produced by array_fill — never user input.
+		// The actual post type slugs are passed via spread to prepare() as individual args.
 		$placeholders = implode( ', ', array_fill( 0, count( $post_types ), '%s' ) );
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$count = $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(p.ID)
 			 FROM {$wpdb->posts} p
@@ -320,6 +322,7 @@ class RR_Limits {
 			   )",
 			...$post_types
 		) );
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		return (int) $count;
 	}
 
@@ -334,8 +337,9 @@ class RR_Limits {
 		if ( empty( $post_types ) || ! is_array( $post_types ) ) {
 			$post_types = array( 'post' );
 		}
+		// See comment in count_posts_without_summary() above for why the IN() placeholder interpolation is safe here.
 		$placeholders = implode( ', ', array_fill( 0, count( $post_types ), '%s' ) );
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$count = $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(p.ID)
 			 FROM {$wpdb->posts} p
@@ -349,6 +353,7 @@ class RR_Limits {
 			   )",
 			...$post_types
 		) );
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		return (int) $count;
 	}
 }

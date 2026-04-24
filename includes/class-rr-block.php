@@ -231,7 +231,11 @@ class RR_Block {
 			if ( ! empty( $modified_ts ) ) {
 				$date = wp_date( get_option( 'date_format' ), (int) $modified_ts );
 				$out .= '<p class="rr-faq-reviewed">'
-					. esc_html( sprintf( __( 'Last reviewed: %s', 'rankready' ), $date ) )
+					. esc_html( sprintf(
+						/* translators: %s: last-reviewed date, formatted per the site date_format option */
+						__( 'Last reviewed: %s', 'rankready' ),
+						$date
+					) )
 					. '</p>';
 			}
 		}
@@ -1149,7 +1153,7 @@ class RR_Block {
 		// are passed to prepare() as trailing args.
 		$type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 		$post_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT p.ID FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = %s
@@ -1158,9 +1162,9 @@ class RR_Block {
 			   AND (pm.meta_value IS NULL OR pm.meta_value = '')
 			 ORDER BY p.post_modified DESC
 			 LIMIT %d",
-			array_merge( array( RR_META_SCHEMA_HASH ), $post_types, array( $batch_size ) )
+			...array_merge( array( RR_META_SCHEMA_HASH ), $post_types, array( $batch_size ) )
 		) );
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
 		if ( empty( $post_ids ) ) return;
 
@@ -1365,9 +1369,11 @@ class RR_Block {
 		$php_version    = PHP_VERSION;
 
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Diagnostic call for server-health recommendation; counts must reflect live state.
 		$total_posts = (int) $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ('post','page')"
 		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- See comment above.
 		$unscanned = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = %s

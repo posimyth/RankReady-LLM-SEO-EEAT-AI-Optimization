@@ -521,6 +521,7 @@ class RR_Llms_Txt {
 
 			// Respect excluded categories.
 			if ( ! empty( $exclude_cats ) ) {
+				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_exclude -- Admin-curated exclusion list, bounded to a handful of term IDs.
 				$cat_args['exclude'] = $exclude_cats;
 			}
 
@@ -713,7 +714,7 @@ class RR_Llms_Txt {
 
 		// Headings (callback for dynamic #).
 		$html = preg_replace_callback( '/<h([1-6])[^>]*>(.*?)<\/h\1>/si', function ( $m ) {
-			return "\n" . str_repeat( '#', (int) $m[1] ) . ' ' . strip_tags( $m[2] ) . "\n";
+			return "\n" . str_repeat( '#', (int) $m[1] ) . ' ' . wp_strip_all_tags( $m[2] ) . "\n";
 		}, $html );
 
 		// Bold and italic (before stripping tags).
@@ -751,7 +752,7 @@ class RR_Llms_Txt {
 
 		// Blockquotes.
 		$html = preg_replace_callback( '/<blockquote[^>]*>(.*?)<\/blockquote>/si', function ( $m ) {
-			$inner = strip_tags( trim( $m[1] ) );
+			$inner = wp_strip_all_tags( trim( $m[1] ) );
 			$bq_lines = explode( "\n", $inner );
 			return implode( "\n", array_map( function ( $l ) { return '> ' . trim( $l ); }, $bq_lines ) );
 		}, $html );
@@ -806,7 +807,7 @@ class RR_Llms_Txt {
 				continue;
 			}
 
-			$cells  = array_map( function ( $c ) { return trim( strip_tags( $c ) ); }, $cell_matches[1] );
+			$cells  = array_map( function ( $c ) { return trim( wp_strip_all_tags( $c ) ); }, $cell_matches[1] );
 			$rows[] = '| ' . implode( ' | ', $cells ) . ' |';
 
 			if ( $is_header ) {
@@ -847,6 +848,7 @@ class RR_Llms_Txt {
 
 		// Exclude Rank Math noindex posts at query level.
 		if ( defined( 'RANK_MATH_VERSION' ) ) {
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- One-off llms.txt generator, result is cached; meta_query is the only way to honor Rank Math's noindex flag here.
 			$args['meta_query'] = array(
 				'relation' => 'OR',
 				array(
@@ -886,6 +888,7 @@ class RR_Llms_Txt {
 			if ( count( $tax_query ) > 1 ) {
 				$tax_query['relation'] = 'AND';
 			}
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Admin-configured category/tag exclusions; query result is cached for llms.txt.
 			$args['tax_query'] = $tax_query;
 		}
 

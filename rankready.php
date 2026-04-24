@@ -299,6 +299,39 @@ add_action( 'admin_init', function (): void {
 //      wp_options/wp_postmeta, not the plugin folder).
 // ═════════════════════════════════════════════════════════════════════════════
 
+// Renames a directory using WP_Filesystem when available (direct method only,
+// no FTP credential prompt), and falls back to native rename() when the
+// filesystem abstraction isn't ready. Both rename paths are exercised during
+// bootstrap / upgrader hooks, so neither can be the sole path.
+if ( ! function_exists( 'rr_rename_dir' ) ) {
+	function rr_rename_dir( string $from, string $to ): bool {
+		$from = untrailingslashit( $from );
+		$to   = untrailingslashit( $to );
+
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+
+		// Initialize only the 'direct' filesystem method. Anything requiring
+		// FTP/SSH credentials (i.e. non-direct hosts) would prompt the user,
+		// which is unacceptable during silent bootstrap — fall back to rename().
+		$method_ok = false;
+		if ( function_exists( 'get_filesystem_method' ) && 'direct' === get_filesystem_method() ) {
+			$method_ok = WP_Filesystem();
+		}
+
+		if ( $method_ok ) {
+			global $wp_filesystem;
+			if ( $wp_filesystem && $wp_filesystem->move( $from, $to, true ) ) {
+				return true;
+			}
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Universal-host fallback when WP_Filesystem is unavailable or the direct method is not selected.
+		return @rename( $from, $to );
+	}
+}
+
 add_filter( 'upgrader_source_selection', function ( $source, $remote_source, $upgrader, $hook_extra ) {
 	if ( ! is_object( $upgrader ) || ! is_a( $upgrader, 'Plugin_Upgrader' ) ) {
 		return $source;
@@ -333,7 +366,7 @@ add_filter( 'upgrader_source_selection', function ( $source, $remote_source, $up
 		}
 	}
 
-	if ( ! @rename( untrailingslashit( $source ), untrailingslashit( $new_source ) ) ) {
+	if ( ! rr_rename_dir( $source, $new_source ) ) {
 		return $source;
 	}
 
@@ -369,7 +402,7 @@ add_action( 'admin_init', function (): void {
 		return;
 	}
 
-	if ( ! @rename( __DIR__, $target ) ) {
+	if ( ! rr_rename_dir( __DIR__, $target ) ) {
 		set_transient( 'rr_folder_migration_failed', $current, HOUR_IN_SECONDS );
 		return;
 	}
@@ -432,9 +465,10 @@ add_action( 'admin_notices', function (): void {
 } );
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+// Translations: relying on WordPress core's just-in-time loader (available
+// since 4.6). Explicit load_plugin_textdomain() would be a no-op on WP.org-
+// hosted installs and is flagged as discouraged by Plugin Check.
 add_action( 'plugins_loaded', function (): void {
-	load_plugin_textdomain( 'rankready', false, dirname( RR_BASENAME ) . '/languages' );
-
 	if ( version_compare( get_bloginfo( 'version' ), '6.2', '<' ) ) {
 		add_action( 'admin_notices', function (): void {
 			echo '<div class="notice notice-error"><p>'
@@ -459,15 +493,19 @@ add_action( 'plugins_loaded', function (): void {
 		RR_Llms_Txt::sync_physical_robots_txt();
 
 		// Migrate data from old AI Post Summary plugin (_aps_ meta) if present.
-		// Only run once — skip if already migrated.
+		// Only run once — skip if already migrated. Raw SQL is intentional: this is
+		// a bulk one-shot migration that runs at most once per site on upgrade, so
+		// caching and loop-based update_post_meta() would be counterproductive.
 		if ( ! get_option( 'rr_aps_migrated' ) ) {
 			global $wpdb;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 			$has_aps = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != '' LIMIT 1",
 				'_aps_summary'
 			) );
 			if ( $has_aps > 0 ) {
 				// Update existing empty _rr_summary entries with old _aps_summary data.
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 				$wpdb->query( $wpdb->prepare(
 					"UPDATE {$wpdb->postmeta} rr
 					 INNER JOIN {$wpdb->postmeta} aps ON aps.post_id = rr.post_id AND aps.meta_key = %s AND aps.meta_value != ''
@@ -477,6 +515,7 @@ add_action( 'plugins_loaded', function (): void {
 					'_rr_summary'
 				) );
 				// Insert for posts that have _aps_summary but no _rr_summary row at all.
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 				$wpdb->query( $wpdb->prepare(
 					"INSERT INTO {$wpdb->postmeta} (post_id, meta_key, meta_value)
 					 SELECT pm.post_id, %s, pm.meta_value

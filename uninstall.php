@@ -164,7 +164,8 @@ $meta_keys = array(
 );
 
 foreach ( $meta_keys as $key ) {
-	$wpdb->delete( $wpdb->postmeta, array( 'meta_key' => $key ) ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+	// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+	$wpdb->delete( $wpdb->postmeta, array( 'meta_key' => $key ) );
 }
 
 // ── Delete user meta (Author Box profile fields) ─────────────────────────────
@@ -195,7 +196,8 @@ $user_meta_keys = array(
 );
 
 foreach ( $user_meta_keys as $key ) {
-	$wpdb->delete( $wpdb->usermeta, array( 'meta_key' => $key ) ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+	// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+	$wpdb->delete( $wpdb->usermeta, array( 'meta_key' => $key ) );
 }
 
 // ── Clear scheduled cron ──────────────────────────────────────────────────────

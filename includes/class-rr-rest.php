@@ -370,7 +370,11 @@ class RR_Rest {
 		if ( $last > 0 && $since < self::REGEN_COOLDOWN ) {
 			return new WP_Error(
 				'rr_rate_limited',
-				sprintf( __( 'Please wait %d more seconds before regenerating.', 'rankready' ), self::REGEN_COOLDOWN - $since ),
+				sprintf(
+					/* translators: %d: remaining cooldown seconds */
+					__( 'Please wait %d more seconds before regenerating.', 'rankready' ),
+					self::REGEN_COOLDOWN - $since
+				),
 				array( 'status' => 429 )
 			);
 		}
@@ -798,6 +802,7 @@ class RR_Rest {
 		return new WP_REST_Response( array(
 			'count'   => $count,
 			'message' => sprintf(
+				/* translators: 1: matching post count, 2: display name of the destination author */
 				_n(
 					'%1$d post will be reassigned to %2$s.',
 					'%1$d posts will be reassigned to %2$s.',
@@ -1077,7 +1082,11 @@ class RR_Rest {
 
 			return new WP_REST_Response( array(
 				'valid'   => true,
-				'message' => sprintf( __( 'Credentials valid and saved. Balance: $%s', 'rankready' ), number_format( (float) $balance, 2 ) ),
+				'message' => sprintf(
+					/* translators: %s: DataForSEO account balance, formatted as USD */
+					__( 'Credentials valid and saved. Balance: $%s', 'rankready' ),
+					number_format( (float) $balance, 2 )
+				),
 			), 200 );
 		}
 
@@ -1103,7 +1112,11 @@ class RR_Rest {
 		if ( $last && $since < self::REGEN_COOLDOWN ) {
 			return new WP_Error(
 				'rr_rate_limited',
-				sprintf( __( 'Please wait %d more seconds before regenerating.', 'rankready' ), self::REGEN_COOLDOWN - $since ),
+				sprintf(
+					/* translators: %d: remaining cooldown seconds */
+					__( 'Please wait %d more seconds before regenerating.', 'rankready' ),
+					self::REGEN_COOLDOWN - $since
+				),
 				array( 'status' => 429 )
 			);
 		}
@@ -1216,6 +1229,7 @@ class RR_Rest {
 
 		// Skip posts that already have FAQ.
 		if ( $skip_existing ) {
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Admin-initiated bulk queue build, runs once per operation, IDs only.
 			$args['meta_query'] = array(
 				'relation' => 'OR',
 				array( 'key' => RR_META_FAQ, 'compare' => 'NOT EXISTS' ),
@@ -1390,6 +1404,7 @@ class RR_Rest {
 	public static function faq_posts_list() {
 		global $wpdb;
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin-only REST endpoint, bounded LIMIT, caching would defeat the "current state" semantics.
 		$results = $wpdb->get_results( $wpdb->prepare(
 			"SELECT p.ID, p.post_title, p.post_type, pm2.meta_value AS faq_generated
 			 FROM {$wpdb->posts} p
@@ -1450,6 +1465,7 @@ class RR_Rest {
 	public static function get_token_usage() {
 		global $wpdb;
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin-only REST endpoint, bounded LIMIT 100, live cost-tracking data must not be cached.
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT pm.post_id, pm.meta_value AS tokens, p.post_title, p.post_type
 			 FROM {$wpdb->postmeta} pm
@@ -1544,16 +1560,16 @@ class RR_Rest {
 		global $wpdb;
 		$type_placeholders = implode( ',', array_fill( 0, count( $all_types ), '%s' ) );
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 		$total_published = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ({$type_placeholders}) AND post_status = %s",
-			array_merge( $all_types, array( 'publish' ) )
+			...array_merge( $all_types, array( 'publish' ) )
 		) );
 		$total_stale = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ({$type_placeholders}) AND post_status = %s AND post_modified < %s",
-			array_merge( $all_types, array( 'publish', $cutoff_date ) )
+			...array_merge( $all_types, array( 'publish', $cutoff_date ) )
 		) );
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
 		return new WP_REST_Response( array(
 			'stale'   => $stale,
@@ -1651,7 +1667,7 @@ class RR_Rest {
 			// never user input. Safe IN() clause pattern.
 			$placeholders = implode( ',', array_fill( 0, count( $public_types ), '%s' ) );
 
-			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 			$total_posts = (int) $wpdb->get_var(
 				$wpdb->prepare(
 					"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ({$placeholders})",
@@ -1676,7 +1692,7 @@ class RR_Rest {
 					...array_merge( $public_types, array( RR_META_FAQ ) )
 				)
 			);
-			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		} else {
 			$total_posts  = 0;
 			$with_summary = 0;

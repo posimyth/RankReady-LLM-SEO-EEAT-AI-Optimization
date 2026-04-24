@@ -232,7 +232,11 @@ class RR_Elementor_Faq_Widget extends \Elementor\Widget_Base {
 			if ( ! empty( $modified_ts ) ) {
 				$date = wp_date( get_option( 'date_format' ), (int) $modified_ts );
 				echo '<p class="rr-faq-reviewed">'
-					. esc_html( sprintf( __( 'Last reviewed: %s', 'rankready' ), $date ) )
+					. esc_html( sprintf(
+						/* translators: %s: last-reviewed date, formatted per the site date_format option */
+						__( 'Last reviewed: %s', 'rankready' ),
+						$date
+					) )
 					. '</p>';
 			}
 		}

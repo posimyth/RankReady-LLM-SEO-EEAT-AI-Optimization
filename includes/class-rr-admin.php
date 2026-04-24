@@ -685,7 +685,8 @@ class RR_Admin {
 			wp_die( esc_html__( 'You do not have permission to access this page.', 'rankready' ) );
 		}
 
-		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'dashboard';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab switch via GET; sanitize_key() enforces a-z0-9_- and no side effects are triggered.
+		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'dashboard';
 
 		// Redirect old tab slugs to new merged tabs (backward compat for bookmarks / links).
 		$legacy_map = array(
@@ -810,6 +811,7 @@ class RR_Admin {
 
 		$is_pro = function_exists( 'rr_is_pro' ) && rr_is_pro();
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Dashboard stat counters must reflect the current state; cached value would lag generation activity.
 		$summary_count = (int) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(DISTINCT post_id) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
@@ -817,6 +819,7 @@ class RR_Admin {
 			)
 		);
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- See comment above.
 		$faq_count = (int) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(DISTINCT post_id) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
@@ -874,7 +877,10 @@ class RR_Admin {
 		<div class="rr-info-grid" style="margin-bottom:28px;">
 			<div class="rr-info-item rr-dash-feature">
 				<h3><?php esc_html_e( 'Content AI', 'rankready' ); ?></h3>
-				<p><?php printf( esc_html__( '%1$d summaries · %2$d FAQ sets on your site.', 'rankready' ), $summary_count, $faq_count ); ?></p>
+				<p><?php
+					/* translators: 1: AI summary count, 2: FAQ set count */
+					printf( esc_html__( '%1$d summaries · %2$d FAQ sets on your site.', 'rankready' ), (int) $summary_count, (int) $faq_count );
+				?></p>
 				<a href="<?php echo esc_url( admin_url( 'admin.php?page=rankready&tab=content' ) ); ?>" class="rr-dash-link"><?php esc_html_e( 'Open →', 'rankready' ); ?></a>
 			</div>
 			<div class="rr-info-item rr-dash-feature">
@@ -1044,8 +1050,8 @@ class RR_Admin {
 							printf(
 								/* translators: 1: used, 2: limit */
 								esc_html__( '%1$d / %2$d used', 'rankready' ),
-								$summary_used,
-								$summary_limit
+								(int) $summary_used,
+								(int) $summary_limit
 							);
 							?>
 						</span>
@@ -1060,8 +1066,8 @@ class RR_Admin {
 							printf(
 								/* translators: 1: used, 2: limit */
 								esc_html__( '%1$d / %2$d used', 'rankready' ),
-								$faq_used,
-								$faq_limit
+								(int) $faq_used,
+								(int) $faq_limit
 							);
 							?>
 						</span>
@@ -1706,7 +1712,10 @@ class RR_Admin {
 							</label>
 							<?php if ( ! empty( $seo_plugin ) ) : ?>
 								<p class="description" style="margin-top:4px;color:#666;">
-									<?php echo esc_html( sprintf( __( 'Disabled — %s handles Article schema.', 'rankready' ), $seo_plugin ) ); ?>
+									<?php
+									/* translators: %s: name of the detected SEO plugin (e.g. Rank Math, Yoast) */
+									echo esc_html( sprintf( __( 'Disabled — %s handles Article schema.', 'rankready' ), $seo_plugin ) );
+									?>
 								</p>
 								<input type="hidden" name="<?php echo esc_attr( RR_OPT_SCHEMA_ARTICLE ); ?>" value="on" />
 							<?php else : ?>
@@ -1746,7 +1755,10 @@ class RR_Admin {
 							</p>
 							<?php if ( ! empty( $seo_plugin ) ) : ?>
 								<p class="description" style="color:#666;">
-									<?php echo esc_html( sprintf( __( 'Auto-skips when a %s FAQ block is present in the post content to prevent duplicates.', 'rankready' ), $seo_plugin ) ); ?>
+									<?php
+									/* translators: %s: name of the detected SEO plugin (e.g. Rank Math, Yoast) */
+									echo esc_html( sprintf( __( 'Auto-skips when a %s FAQ block is present in the post content to prevent duplicates.', 'rankready' ), $seo_plugin ) );
+									?>
 								</p>
 							<?php endif; ?>
 						</td>
@@ -1780,7 +1792,10 @@ class RR_Admin {
 							</details>
 							<?php if ( ! empty( $seo_plugin ) ) : ?>
 								<p class="description" style="margin-top:4px;color:#666;">
-									<?php echo esc_html( sprintf( __( 'Auto-skips when a %s HowTo block is present in the post content.', 'rankready' ), $seo_plugin ) ); ?>
+									<?php
+									/* translators: %s: name of the detected SEO plugin (e.g. Rank Math, Yoast) */
+									echo esc_html( sprintf( __( 'Auto-skips when a %s HowTo block is present in the post content.', 'rankready' ), $seo_plugin ) );
+									?>
 								</p>
 							<?php endif; ?>
 						</td>
@@ -1850,7 +1865,10 @@ class RR_Admin {
 					&nbsp;&nbsp;|<br>
 					&nbsp;&nbsp;|-- <?php esc_html_e( 'Article schema?', 'rankready' ); ?><br>
 					<?php if ( ! empty( $seo_plugin ) ) : ?>
-					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php echo esc_html( sprintf( __( 'Skipped (%s active)', 'rankready' ), $seo_plugin ) ); ?><br>
+					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php
+						/* translators: %s: name of the detected SEO plugin (e.g. Rank Math, Yoast) */
+						echo esc_html( sprintf( __( 'Skipped (%s active)', 'rankready' ), $seo_plugin ) );
+					?><br>
 					<?php else : ?>
 					&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php esc_html_e( 'YES — injected on all posts/pages', 'rankready' ); ?><br>
 					<?php endif; ?>
@@ -3294,6 +3312,7 @@ class RR_Admin {
 
 		if ( ! empty( $enabled_types ) ) {
 			global $wpdb;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Info tab stat counter; live state is required, postmeta counts are not cacheable here.
 			$summary_count = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
 				RR_META_SUMMARY
@@ -3302,6 +3321,7 @@ class RR_Admin {
 
 		$faq_count = 0;
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- See comment above.
 		$faq_count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
 			RR_META_FAQ
@@ -3408,6 +3428,7 @@ class RR_Admin {
 			<p class="description">
 				<?php
 				printf(
+					/* translators: %s: human-readable time-ago string (e.g. "2 hours") */
 					esc_html__( 'Last generated: %s ago', 'rankready' ),
 					esc_html( human_time_diff( $generated ) )
 				);

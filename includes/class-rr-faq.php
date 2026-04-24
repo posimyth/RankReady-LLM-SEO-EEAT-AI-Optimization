@@ -225,7 +225,11 @@ class RR_Faq {
 			if ( ! empty( $modified_ts ) ) {
 				$date = wp_date( get_option( 'date_format' ), (int) $modified_ts );
 				$html .= '<p class="rr-faq-reviewed">';
-				$html .= esc_html( sprintf( __( 'Last reviewed: %s', 'rankready' ), $date ) );
+				$html .= esc_html( sprintf(
+					/* translators: %s: last-reviewed date, formatted per the site date_format option */
+					__( 'Last reviewed: %s', 'rankready' ),
+					$date
+				) );
 				$html .= '</p>';
 			}
 		}

@@ -119,7 +119,7 @@ class RR_Crawler_Log {
 	private static function drop_user_agent_column(): void {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$exists = $wpdb->get_results( "SHOW COLUMNS FROM {$table} LIKE 'user_agent'" );
 		if ( ! empty( $exists ) ) {
 			$wpdb->query( "ALTER TABLE {$table} DROP COLUMN user_agent" );
@@ -187,7 +187,10 @@ class RR_Crawler_Log {
 		// llms_txt / llms_full: virtual files, no post — fields stay empty.
 
 		global $wpdb;
-		$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		// Per-request crawler hit log write. The insert is the operation itself,
+		// so object-cache read/write wrappers do not apply here.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery
+		$wpdb->insert(
 			$wpdb->prefix . 'rr_crawler_log',
 			array(
 				'logged_at'  => current_time( 'mysql' ),
@@ -200,6 +203,7 @@ class RR_Crawler_Log {
 			),
 			array( '%s', '%s', '%s', '%s', '%d', '%s', '%s' )
 		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery
 	}
 
 	// ── Stat queries ───────────────────────────────────────────────────────
@@ -210,7 +214,7 @@ class RR_Crawler_Log {
 	public static function get_bot_stats( int $days = 30 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT
@@ -239,7 +243,7 @@ class RR_Crawler_Log {
 	public static function get_bot_top_pages( string $bot_name, int $days = 30, int $limit = 5 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT post_id, post_type, post_title, url_path, COUNT(*) AS total
@@ -265,7 +269,7 @@ class RR_Crawler_Log {
 	public static function get_cpt_stats( int $days = 30 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT post_type, COUNT(*) AS total, COUNT(DISTINCT post_id) AS unique_posts
@@ -287,7 +291,7 @@ class RR_Crawler_Log {
 	public static function get_top_pages( int $days = 30, int $limit = 15 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT
@@ -322,7 +326,7 @@ class RR_Crawler_Log {
 	public static function get_endpoint_totals( int $days = 30 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT endpoint, COUNT(*) AS total
@@ -350,7 +354,7 @@ class RR_Crawler_Log {
 	public static function get_recent_hits( int $limit = 40 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT logged_at, bot_name, endpoint, post_type, post_title, url_path
@@ -368,7 +372,7 @@ class RR_Crawler_Log {
 	public static function get_total( int $days = 30 ): int {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return (int) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(*) FROM {$table} WHERE logged_at >= DATE_SUB(NOW(), INTERVAL %d DAY)",
@@ -382,7 +386,7 @@ class RR_Crawler_Log {
 	public static function get_unique_pages( int $days = 30 ): int {
 		global $wpdb;
 		$table = $wpdb->prefix . 'rr_crawler_log';
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return (int) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(DISTINCT post_id) FROM {$table}
@@ -406,7 +410,7 @@ class RR_Crawler_Log {
 		$table = $wpdb->prefix . 'rr_crawler_log';
 
 		// Pass 1: time-based expiry.
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$wpdb->query(
 			$wpdb->prepare(
 				"DELETE FROM {$table} WHERE logged_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
