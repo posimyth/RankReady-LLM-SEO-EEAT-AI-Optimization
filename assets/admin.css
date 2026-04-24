@@ -344,7 +344,7 @@
 .rr-info-grid .rr-info-item:nth-child(6) { animation-delay: 300ms; }
 .rr-info-grid .rr-info-item:nth-child(n+7) { animation-delay: 360ms; }
 
-/* Info icons retired in v1.0.0 — kept hidden for backward CSS compat */
+/* Info icons retired in v0.0.1 — kept hidden for backward CSS compat */
 .rr-info-icon { display: none; }
 
 @keyframes rr-icon-pop {
@@ -428,7 +428,7 @@
 	border-left: 3px solid #1d2327;
 }
 
-/* Section icons retired in v1.0.0 — kept hidden for backward compat */
+/* Section icons retired in v0.0.1 — kept hidden for backward compat */
 .rr-section-icon { display: none; }
 
 .rr-section-title {
@@ -769,7 +769,7 @@ select.regular-text {
 	flex-shrink: 0;
 }
 
-/* Upgrade button CSS removed in v1.0.0 — Pro CTAs replaced with non-interactive
+/* Upgrade button CSS removed in v0.0.1 — Pro CTAs replaced with non-interactive
    "Coming Soon" pill until license system lands in v1.2. */
 
 .rr-plan-banner__cta-hint {

@@ -159,9 +159,9 @@ Yes. RankReady is open source under GPL-2.0-or-later. Source: [github.com/aditya
 * Removed: GitHub-based auto-update path — free version updates exclusively via WordPress.org.
 * Branding: Plugin URI → posimyth.com. Author → POSIMYTH Inc. & Aditya Sharma.
 
-For the full pre-1.0.0 development history (versions 0.5.0 through 0.6.7.2), see the [GitHub repository](https://github.com/adityaarsharma/rankready/blob/main/CHANGELOG.md).
+For the full pre-0.0.1 development history (versions 0.5.0 through 0.6.7.2), see the [GitHub repository](https://github.com/adityaarsharma/rankready/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
 
 = 0.0.1 =
-First public release on WordPress.org. Existing users on the GitHub-distributed v0.6.x: this version removes the GitHub auto-update path. After upgrading to 1.0.0, all future updates will arrive via WordPress.org's standard plugin updater.
+First public release on WordPress.org. Existing users on the GitHub-distributed v0.6.x: this version removes the GitHub auto-update path. After upgrading to 0.0.1, all future updates will arrive via WordPress.org's standard plugin updater.

@@ -270,7 +270,7 @@ add_action( 'admin_init', function (): void {
 // ═════════════════════════════════════════════════════════════════════════════
 // Updates: handled by WordPress.org SVN (auto-updates via Plugins screen).
 // ─────────────────────────────────────────────────────────────────────────────
-// v1.0.0+ ships exclusively from WordPress.org. The Plugin Update Checker
+// v0.0.1+ ships exclusively from WordPress.org. The Plugin Update Checker
 // (PUC) library was removed from the WP.org distribution per WP.org policy.
 // Future Pro / private builds will reintroduce a license-gated update path
 // from store.posimyth.com (planned for v1.2).
